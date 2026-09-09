@@ -1,0 +1,30 @@
+# Dados e índices nunca entram no versionamento (§11)
+/data/
+/indices/
+*.sqlite
+*.sqlite3
+*.db
+
+# Segredos
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Artefatos de governança gerados (Fase 9)
+/governanca-out/
+painel.html
+inventario.json
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+.vscode/
