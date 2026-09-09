@@ -37,6 +37,10 @@ _TAGS_DE_BLOCO = frozenset(
 )
 # Tags que marcam redação riscada (revogada ou substituída).
 _TAGS_RISCADAS = frozenset({"s", "strike", "del"})
+# Normativo antigo (anos 2000) vem como texto pré-formatado: não há <p>, a
+# quebra de linha é que separa os dispositivos. Dentro de <pre> o "\n" é
+# estrutura, não espaço em branco descartável.
+_TAGS_PRE = frozenset({"pre"})
 
 # Sequências que aparecem quando UTF-8 foi lido como latin-1 em algum ponto do caminho.
 _MOJIBAKE = ("Ã§", "Ã£", "Ã©", "Ã¡", "Ãµ", "Ãª", "Ã³", "Ã\xad", "Ã‡", "Ã‰")
@@ -74,16 +78,23 @@ class _ColetorDeLinhas(HTMLParser):
         self._pedacos: list[str] = []
         self._riscado_no_bloco = False
         self._profundidade_riscada = 0
+        self._profundidade_pre = 0
+        self.preformatado = False
 
     def handle_starttag(self, tag: str, attrs: object) -> None:  # noqa: ARG002
         if tag in _TAGS_RISCADAS:
             self._profundidade_riscada += 1
+        if tag in _TAGS_PRE:
+            self._profundidade_pre += 1
+            self.preformatado = True
         if tag in _TAGS_DE_BLOCO:
             self._fechar_linha()
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _TAGS_RISCADAS and self._profundidade_riscada > 0:
             self._profundidade_riscada -= 1
+        if tag in _TAGS_PRE and self._profundidade_pre > 0:
+            self._profundidade_pre -= 1
         if tag in _TAGS_DE_BLOCO:
             self._fechar_linha()
 
@@ -94,6 +105,13 @@ class _ColetorDeLinhas(HTMLParser):
         if self._profundidade_riscada:
             self._riscado_no_bloco = True
             return  # a redação substituída não entra no texto vivo
+        if self._profundidade_pre and "\n" in data:
+            primeiro, *resto = data.split("\n")
+            self._pedacos.append(primeiro)
+            for pedaco in resto:
+                self._fechar_linha()
+                self._pedacos.append(pedaco)
+            return
         self._pedacos.append(data)
 
     def _fechar_linha(self) -> None:
@@ -155,14 +173,36 @@ def classificar_linha(linha: str) -> tuple[TipoBloco, str, int | None]:
     return "outro", "", None
 
 
+def _rejuntar_linhas_quebradas(linhas: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """Desfaz a quebra de linha de largura fixa do texto pré-formatado.
+
+    Em `<pre>` a quebra às vezes separa dispositivos e às vezes é só o fim da
+    coluna. Uma linha que não abre dispositivo novo é continuação da anterior —
+    sem juntar, um único artigo viraria uma dúzia de chunks pela metade.
+    """
+    rejuntadas: list[tuple[str, bool]] = []
+    for texto, riscado in linhas:
+        continuacao = classificar_linha(texto)[0] == "outro"
+        if continuacao and rejuntadas and not riscado and not rejuntadas[-1][1]:
+            anterior, _ = rejuntadas[-1]
+            rejuntadas[-1] = (f"{anterior} {texto}".strip(), False)
+            continue
+        rejuntadas.append((texto, riscado))
+    return rejuntadas
+
+
 def extrair_blocos(html_bruto: str) -> list[Bloco]:
     """HTML do normativo -> blocos classificados, na ordem do documento."""
     coletor = _ColetorDeLinhas()
     coletor.feed(html_bruto)
     coletor.close()
 
+    linhas = coletor.linhas
+    if coletor.preformatado:
+        linhas = _rejuntar_linhas_quebradas(linhas)
+
     blocos: list[Bloco] = []
-    for linha, riscado in coletor.linhas:
+    for linha, riscado in linhas:
         tipo, rotulo, numero = classificar_linha(linha)
         blocos.append(
             Bloco(tipo=tipo, rotulo=rotulo, texto=linha, riscado=riscado, numero_artigo=numero)

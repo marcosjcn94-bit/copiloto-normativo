@@ -74,3 +74,40 @@ def test_normalizar_texto_colapsa_espacos_e_nbsp() -> None:
 def test_inciso_so_casa_algarismo_romano_valido() -> None:
     assert classificar_linha("IV - fiscalizar;")[0] == "inciso"
     assert classificar_linha("Instituições - devem;")[0] == "outro"
+
+
+PRE = """<div><pre>
+RESOLU&Ccedil;&Atilde;O N&ordm; 3.380
+
+Art. 1&ordm; Determinar &agrave;s institui&ccedil;&otilde;es financeiras a
+implementa&ccedil;&atilde;o de estrutura de gerenciamento do risco
+operacional.
+
+&sect; 1&ordm; A estrutura deve ser compat&iacute;vel com a natureza da
+institui&ccedil;&atilde;o.
+
+I - identifica&ccedil;&atilde;o dos riscos;
+
+Art. 2&ordm; A estrutura deve ser evidenciada em relat&oacute;rio.
+</pre></div>"""
+
+
+def test_normativo_pre_formatado_e_quebrado_por_dispositivo() -> None:
+    blocos = extrair_blocos(PRE)
+    assert [b.tipo for b in blocos if b.tipo != "outro"] == [
+        "artigo",
+        "paragrafo",
+        "inciso",
+        "artigo",
+    ]
+
+
+def test_quebra_de_largura_fixa_nao_fragmenta_o_dispositivo() -> None:
+    artigo = next(b for b in extrair_blocos(PRE) if b.tipo == "artigo")
+    assert artigo.texto.endswith("risco operacional.")
+    assert "institui" in artigo.texto and "  " not in artigo.texto
+
+
+def test_documento_com_p_nao_sofre_rejuncao() -> None:
+    html = "<p>Art. 1º Objeto.</p><p>Considerando o disposto na lei.</p><p>Art. 2º Prazo.</p>"
+    assert [b.tipo for b in extrair_blocos(html)] == ["artigo", "outro", "artigo"]

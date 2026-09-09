@@ -1,0 +1,218 @@
+# Corpus do copiloto — 22 normativos do BCB sobre segurança cibernética,
+# computação em nuvem, continuidade e risco operacional.
+#
+# Como esta lista foi montada (§4.1 do briefing — nada aqui veio de memória):
+#   1. `endpoint_busca` foi consultado com dez consultas do tema;
+#   2. sobrou o que a ementa confirma como do tema (Comunicados e Cartas Circulares
+#      ficaram de fora: não têm corpo articulado, e a citação do projeto é por artigo);
+#   3. cada norma foi baixada de `endpoint_normativo` e teve tipo, data, vigência e
+#      número de artigos conferidos um a um;
+#   4. Circular nº 3.647/2013 foi descartada — a fonte devolve um texto de 304
+#      caracteres, sem artigo nenhum. Corpus pequeno e coeso vale mais que volume.
+#
+# `status_vigencia` aqui é o valor DECLARADO na curadoria. A coleta relê o campo na
+# fonte e a divergência entre declarado e coletado é teste, não surpresa.
+
+[fonte]
+endpoint_normativo = "https://www.bcb.gov.br/api/conteudo/app/normativos/exibenormativo"
+endpoint_busca = "https://www.bcb.gov.br/api/search/app/normativos/buscanormativos"
+parametros = "p1 = tipo do normativo, p2 = número"
+verificado_em = 2026-09-09
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "700"
+ano = 2026
+data = 2026-01-13
+tema = "risco_operacional"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=700"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "454"
+ano = 2025
+data = 2025-01-30
+tema = "computacao_em_nuvem"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=454"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "538"
+ano = 2025
+data = 2025-12-18
+tema = "seguranca_cibernetica"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=538"
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "662"
+ano = 2025
+data = 2025-09-11
+tema = "seguranca_da_informacao"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=662"
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "663"
+ano = 2025
+data = 2025-09-12
+tema = "seguranca_da_informacao"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=663"
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "664"
+ano = 2025
+data = 2025-09-12
+tema = "seguranca_da_informacao"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=664"
+
+[[norma]]
+tipo = "Resolução CMN"
+numero = "5274"
+ano = 2025
+data = 2025-12-18
+tema = "seguranca_cibernetica"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20CMN&numero=5274"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "287"
+ano = 2023
+data = 2023-01-24
+tema = "seguranca_da_informacao"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=287"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "288"
+ano = 2023
+data = 2023-01-24
+tema = "computacao_em_nuvem"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=288"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "306"
+ano = 2023
+data = 2023-03-23
+tema = "risco_operacional"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=306"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "342"
+ano = 2023
+data = 2023-09-26
+tema = "continuidade_e_incidentes"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=342"
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "444"
+ano = 2023
+data = 2023-12-21
+tema = "risco_operacional"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=444"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "85"
+ano = 2021
+data = 2021-04-08
+tema = "seguranca_cibernetica"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=85"
+
+[[norma]]
+tipo = "Resolução BCB"
+numero = "115"
+ano = 2021
+data = 2021-07-14
+tema = "seguranca_da_informacao"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20BCB&numero=115"
+
+[[norma]]
+tipo = "Resolução CMN"
+numero = "4893"
+ano = 2021
+data = 2021-02-26
+tema = "seguranca_cibernetica"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o%20CMN&numero=4893"
+
+[[norma]]
+tipo = "Instrução Normativa BCB"
+numero = "33"
+ano = 2020
+data = 2020-10-29
+tema = "risco_operacional"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=33"
+
+[[norma]]
+tipo = "Circular"
+numero = "3979"
+ano = 2020
+data = 2020-01-30
+tema = "risco_operacional"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Circular&numero=3979"
+
+[[norma]]
+tipo = "Circular"
+numero = "3969"
+ano = 2019
+data = 2019-11-13
+tema = "seguranca_cibernetica"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Circular&numero=3969"
+
+[[norma]]
+tipo = "Resolução"
+numero = "4752"
+ano = 2019
+data = 2019-09-26
+tema = "seguranca_cibernetica"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o&numero=4752"
+
+[[norma]]
+tipo = "Circular"
+numero = "3909"
+ano = 2018
+data = 2018-08-16
+tema = "seguranca_cibernetica"
+status_vigencia = "vigente"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Circular&numero=3909"
+
+[[norma]]
+tipo = "Resolução"
+numero = "4658"
+ano = 2018
+data = 2018-04-26
+tema = "seguranca_cibernetica"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o&numero=4658"
+
+[[norma]]
+tipo = "Resolução"
+numero = "3380"
+ano = 2006
+data = 2006-06-29
+tema = "risco_operacional"
+status_vigencia = "revogada"
+url = "https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Resolu%C3%A7%C3%A3o&numero=3380"

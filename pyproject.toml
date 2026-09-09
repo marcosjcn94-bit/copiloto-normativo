@@ -47,4 +47,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
 # `rede` usa a internet e carrega o modelo ONNX; o CI da Fase 7 desmarca com -m "not rede".
-markers = ["rede: exige rede e o modelo de embeddings baixado localmente"]
+markers = [
+    "rede: exige rede e o modelo de embeddings baixado localmente",
+    "corpus: exige o corpus já coletado e indexado (python -m copiloto.ingestao.indexacao)",
+]
