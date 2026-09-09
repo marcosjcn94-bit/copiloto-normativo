@@ -27,10 +27,9 @@ from copiloto.ingestao.extracao import acentuacao_intacta, extrair_blocos
 
 logger = logging.getLogger(__name__)
 
-# Nome da coleção e modelo migram para `config/parametros.toml` na Fase 3, junto
-# com os demais parâmetros de recuperação.
-COLECAO_DENSA = "normativos_bcb"
-MODELO_EMBEDDING = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# O nome da coleção e o modelo de embedding vivem em `config/parametros.toml`
+# desde a Fase 3: quem indexa e quem busca têm de concordar, e duas constantes
+# em dois módulos concordam até alguém mudar uma delas.
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS normas (
@@ -290,6 +289,11 @@ def executar_pipeline(
     """
     from copiloto.ingestao.coleta import buscar_no_bcb, carregar_corpus, coletar
 
+    # Import tardio: `recuperacao.esparso` usa o `tokenizar` deste módulo, então
+    # importar a recuperação aqui em cima fecharia um ciclo.
+    from copiloto.recuperacao.retriever import carregar_parametros
+
+    parametros = carregar_parametros(raiz / "config" / "parametros.toml")
     corpus = carregar_corpus(raiz / "config" / "corpus.toml")
     bruto = raiz / "data" / "bruto"
     coleta = coletar(corpus, bruto, buscar=buscar_no_bcb(), forcar=forcar)
@@ -308,9 +312,9 @@ def executar_pipeline(
 
         cliente = chromadb.PersistentClient(path=str(raiz / "indices" / "chroma"))
         colecao = cliente.get_or_create_collection(
-            name=COLECAO_DENSA, metadata={"hnsw:space": "cosine"}
+            name=parametros.colecao, metadata={"hnsw:space": "cosine"}
         )
-        embedder = TextEmbedding(model_name=MODELO_EMBEDDING)
+        embedder = TextEmbedding(model_name=parametros.modelo_embedding)
 
     conexao = abrir_catalogo(raiz / "data" / "catalogo.sqlite")
     try:

@@ -65,7 +65,7 @@ Restrição inegociável: tudo gratuito, CPU, 8 GB de RAM.
 
 ## Fases
 
-Executar em ordem, sem avançar sem o critério de pronto verde (§6 do briefing).
+Executar em ordem, sem avançar sem o critério de pronto verde (`fases_de_execuçao.md`).
 
 0 setup · 1 fatia fina · 2 corpus + catálogo SQL · 3 recuperação híbrida · 4 tools ·
 5 grafo/HITL/guardrails · 6 API+webhook+CRM falso · 7 observabilidade/evals/CI ·

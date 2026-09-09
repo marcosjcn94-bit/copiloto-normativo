@@ -69,12 +69,13 @@ def test_indice_esparso_cobre_os_mesmos_chunks_do_denso(catalogo) -> None:
     assert len(payload["ids"]) == len(set(payload["ids"])), "id de chunk duplicado no BM25"
 
     chromadb = pytest.importorskip("chromadb")
-    from copiloto.ingestao.indexacao import COLECAO_DENSA
+    from copiloto.recuperacao import carregar_parametros
 
+    parametros = carregar_parametros(RAIZ / "config" / "parametros.toml")
     caminho = RAIZ / "indices" / "chroma"
     if not caminho.exists():
         pytest.skip("índice denso ausente")
-    colecao = chromadb.PersistentClient(path=str(caminho)).get_collection(COLECAO_DENSA)
+    colecao = chromadb.PersistentClient(path=str(caminho)).get_collection(parametros.colecao)
     assert colecao.count() == len(payload["ids"])
 
 

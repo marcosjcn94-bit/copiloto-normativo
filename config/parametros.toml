@@ -1,0 +1,43 @@
+# Parâmetros de comportamento do copiloto (§13 do briefing).
+#
+# Regra dura: mudar um valor aqui nunca deve exigir mexer no Python. Se um número
+# apareceu num `.py`, ele está no lugar errado.
+#
+# Os thresholds de [evals] vêm do ENGENHARIA_DE_SISTEMAS_IA_ESPECIFICACAO.md §4.2 e
+# são fixos. Os de [recuperacao] são ponto de partida, não verdade: quem manda é a
+# tabela de ablação em `evals/ablacao.md`. Todo valor abaixo que difere do briefing
+# tem a medição que o justifica anotada ao lado.
+
+[recuperacao]
+k_denso          = 30      # candidatos da busca vetorial
+k_esparso        = 30      # candidatos do BM25
+k_rrf            = 60      # constante do Reciprocal Rank Fusion
+k_final          = 5       # trechos entregues ao LLM após o rerank
+score_minimo     = 0.5     # abaixo disso, descarta — só vale no modo com rerank
+
+# `score_minimo` mantido no 0.5 do §13, mas sem medição que o sustente: na
+# ablação de 2026-09-09 nenhum valor entre 0,0 e 0,7 mudou recall@5 ou MRR. O
+# corte é inerte sobre as perguntas com resposta no corpus. A função real do
+# threshold é descartar quando nada é relevante, e isso quem exercita são as
+# perguntas de "não sei", medidas na Fase 7. Até lá, tratar este número como
+# não verificado — nenhuma medição até hoje o aprova nem o reprova.
+
+# Identidade dos índices: quem indexa e quem busca precisam concordar, então o
+# nome da coleção e o modelo moram aqui, não duplicados nos dois módulos.
+colecao          = "normativos_bcb"
+modelo_embedding = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+modelo_rerank    = "ms-marco-MiniLM-L-12-v2"   # ver evals/ablacao.md
+
+[grafo]
+max_passos       = 8       # limite rígido contra loop infinito
+max_autocorrecao = 2       # tentativas de correção de schema antes do fallback
+
+[llm]
+temperatura      = 0.0     # domínio normativo não admite criatividade
+max_tokens_ctx   = 8000    # orçamento de contexto
+
+[evals]
+faithfulness_min = 0.95
+relevancia_min   = 0.85
+erro_tool_max    = 0.02
+recall_5_min     = 0.80
