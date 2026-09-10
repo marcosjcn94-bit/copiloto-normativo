@@ -52,7 +52,15 @@ Restrição inegociável: tudo gratuito, CPU, 8 GB de RAM.
 .venv/Scripts/python.exe -m pytest      # testes
 .venv/Scripts/python.exe -m ruff check .    # lint
 .venv/Scripts/python.exe -m ruff format .   # formatação
+
+.venv/Scripts/python.exe evals/rodar.py --camada 1   # o que o CI roda, sem corpus
+.venv/Scripts/python.exe evals/rodar.py --todas      # + recuperação e juiz (custa chamada)
+.venv/Scripts/python.exe evals/ablacao.py            # regera evals/ablacao.md
 ```
+
+Trace do Langfuse é opcional e exige o extra: `pip install -e ".[obs]"`. Sem ele, ou sem
+`LANGFUSE_*` no ambiente, o copiloto responde igual e não emite trace — `GET /saude` diz
+qual dos dois falta.
 
 ## Estilo de código
 

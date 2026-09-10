@@ -84,9 +84,16 @@ class Decisao(Corpo):
 
 
 class SaidaConsulta(Corpo):
-    """A resposta de `POST /perguntar`."""
+    """A resposta de `POST /perguntar`.
+
+    `trace_id` é vazio quando não há observabilidade configurada — que é operação
+    normal, não erro. Quando há, ele é o que liga esta resposta ao trace do
+    painel: sem ele, achar o trace de uma consulta específica vira garimpo por
+    horário, justamente na hora em que ninguém tem tempo de garimpar.
+    """
 
     thread_id: str
+    trace_id: str = ""
     estado: Estado
     resposta: str = ""
     citacoes: list[str] = Field(default_factory=list)
@@ -97,9 +104,10 @@ class SaidaConsulta(Corpo):
 
 
 class SaidaDecisao(Corpo):
-    """A resposta de `POST /aprovar`."""
+    """A resposta de `POST /aprovar`. Trace próprio, mesma conversa."""
 
     thread_id: str
+    trace_id: str = ""
     estado: Estado
     resposta: str = ""
     citacoes: list[str] = Field(default_factory=list)

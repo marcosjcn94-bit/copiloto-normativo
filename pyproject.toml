@@ -25,6 +25,14 @@ dev = [
     "pytest>=8.3",
     "ruff>=0.7",
 ]
+# Observabilidade (Fase 7). Extra, e não dependência principal, por dois motivos:
+# o `langfuse` arrasta o OpenTelemetry inteiro, e a suíte hermética do CI não
+# pode depender de pacote que só serve para falar com um serviço externo.
+# `observabilidade/tracing.py` degrada para no-op quando o pacote não está
+# instalado — o copiloto responde igual, só não emite trace.
+obs = [
+    "langfuse>=3.0",
+]
 
 [build-system]
 requires = ["hatchling"]

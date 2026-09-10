@@ -3,8 +3,8 @@
 Gerada por `evals/ablacao.py`. **Não editar à mão**: se um número aqui não
 veio de uma execução, a tabela perde a única coisa que a torna útil.
 
-- Medido em: 2026-09-09
-- Commit: `03b0943`
+- Medido em: 2026-09-10
+- Commit: `47250dd`
 - Gabarito: `evals/golden.jsonl`, 32 perguntas do tipo `rag`
 - k avaliado: 5
 - Parâmetros: k_denso=30, k_esparso=30, k_rrf=60, score_minimo=0.5

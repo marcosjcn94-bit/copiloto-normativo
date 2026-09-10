@@ -96,7 +96,19 @@ _TIPOS = r"Resolu[çc][ãa]o(?:\s+(?:BCB|CMN))?|Circular|Instru[çc][ãa]o\s+Nor
 _CITACAO = re.compile(
     rf"(?P<tipo>{_TIPOS})"
     r"\s*(?:n[º°o]\.?\s*)?"
-    r"(?P<numero>\d{1,3}(?:\.\d{3})*)"
+    # O número da norma vem em duas grafias no corpus real: com separador de
+    # milhar (`4.893`) e sem (`5274`, `3979`). A alternativa com ponto vem
+    # primeiro porque `\d{1,6}` casaria `4` e pararia antes do separador.
+    #
+    # **Este foi o defeito mais caro da Fase 7.** A versão anterior aceitava só
+    # `\d{1,3}(\.\d{3})*`, que casa `85` e `4.893` mas para no primeiro dígito de
+    # `5274` — e aí a citação inteira não casava. Como as tools devolvem o número
+    # cru do catálogo, toda resposta sobre Circular nº 3979 ou Resolução CMN nº
+    # 5274 era reprovada como `sem_citacao`, o agente gastava as duas tentativas
+    # e terminava dizendo que não encontrou base normativa. Uma resposta correta
+    # virava recusa, e nenhum teste via: as fixtures usavam `85` e `4.893`.
+    # Quem pegou foi a camada 1 de `evals/rodar.py` rodando sobre o corpus real.
+    r"(?P<numero>\d{1,3}(?:\.\d{3})+|\d{1,6})"
     r"(?:\s*(?:,\s*de\s*|/)\s*(?P<ano>\d{4}))?"
     r"\s*,?\s*art(?:igo)?\.?\s*"
     r"(?P<artigo>\d{1,3})[º°]?",

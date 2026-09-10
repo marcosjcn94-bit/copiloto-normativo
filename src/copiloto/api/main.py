@@ -16,6 +16,11 @@ as execuções do grafo: duas consultas simultâneas usariam o mesmo embedder e 
 mesmo reranker ao mesmo tempo, e o mesmo arquivo SQLite de checkpoint. Vazão não é
 requisito deste sistema; previsibilidade de memória é.
 
+**Uma sessão de trace por requisição (Fase 7).** O rastreador vive no serviço; a
+*sessão* nasce e morre dentro de `responder` e `decidir`, porque é ela que carrega
+o `thread_id`. A pergunta só entra no trace depois da execução, lida do estado
+final — é lá que ela já passou pelo guardrail que apaga o CPF.
+
 **O registro de tools é montado por requisição.** `montar_registro` recebe
 `thread_id` e o passo corrente porque os dois entram na chave de idempotência. Um
 registro global guardaria o `thread_id` da primeira conversa e daria a mesma chave
@@ -61,6 +66,14 @@ from copiloto.grafo.nos import ParametrosDoGrafo
 from copiloto.grafo.nos import carregar_parametros as parametros_do_grafo
 from copiloto.llm.groq import ProvedorGroq
 from copiloto.llm.provedor import ProvedorLLM
+from copiloto.observabilidade.tracing import (
+    ProvedorRastreado,
+    Rastreador,
+    RastreadorNulo,
+    Sessao,
+    abrir_rastreador,
+    versao_da_ficha,
+)
 from copiloto.recuperacao.retriever import Recuperador
 from copiloto.tools.buscar_normativo import FonteDeTrechos
 from copiloto.tools.registrar_crm import enviar_registro
@@ -156,8 +169,10 @@ class Servico:
         caminho_checkpoint: Path,
         crm_base_url: str = "",
         cliente_crm: httpx.Client | None = None,
+        rastreador: Rastreador | None = None,
         fechaveis: tuple[Any, ...] = (),
     ) -> None:
+        self._rastreador = rastreador or RastreadorNulo(motivo="nao_configurado")
         self._provedor = provedor
         self._recuperador = recuperador
         self._catalogo = catalogo
@@ -197,11 +212,21 @@ class Servico:
             caminho_checkpoint=configuracao.caminho_checkpoint,
             crm_base_url=configuracao.crm_base_url,
             cliente_crm=cliente_crm,
+            rastreador=abrir_rastreador(raiz=configuracao.raiz, release=versao_do_pacote()),
             fechaveis=(catalogo, conexao, cliente_crm),
         )
 
     def fechar(self) -> None:
-        """Quem abriu fecha. No Windows, conexão SQLite viva trava o arquivo."""
+        """Quem abriu fecha. No Windows, conexão SQLite viva trava o arquivo.
+
+        O trace é descarregado **aqui, e não a cada requisição**. O SDK envia em
+        lote, num thread de fundo: chamar `flush()` por resposta anularia o lote e
+        poria uma ida à rede no caminho de toda consulta — latência paga pelo
+        usuário para beneficiar o painel. No desligamento é o oposto: sem isto, o
+        que ainda está na fila morre com o processo, e no scale-to-zero da Fase 8
+        o processo morre o tempo todo.
+        """
+        self._rastreador.descarregar()
         for recurso in self._fechaveis:
             if recurso is None:
                 continue
@@ -246,7 +271,13 @@ class Servico:
 
         return escrever
 
-    def _grafo(self, thread_id: str) -> Any:
+    def _grafo(self, thread_id: str, *, sessao: Sessao) -> Any:
+        """O grafo desta requisição, com a sessão de trace já embutida.
+
+        O provedor entra embrulhado em `ProvedorRastreado`: é o decorador que
+        emite a geração com modelo e tokens, e é o que faz o custo aparecer no
+        painel sem que `groq.py` saiba que o Langfuse existe.
+        """
         passo = self._passo_seguinte(thread_id)
         registro = montar_registro(
             recuperador=self._recuperador,
@@ -257,12 +288,19 @@ class Servico:
         )
         return compilar(
             Dependencias(
-                provedor=self._provedor,
+                provedor=ProvedorRastreado(self._provedor, sessao=sessao),
                 registro=registro,
                 parametros=self._parametros_grafo,
                 escrever=self._escritor(),
+                sessao=sessao,
             ),
             checkpointer=self._checkpointer,
+        )
+
+    def _sessao(self, nome: str, thread_id: str) -> Any:
+        """A sessão de trace desta requisição, etiquetada com quem vai atender."""
+        return self._rastreador.sessao(
+            nome=nome, thread_id=thread_id, id_sistema=self._provedor.id_sistema
         )
 
     # --- os verbos que `rotas.Copiloto` declara ------------------------------
@@ -272,32 +310,53 @@ class Servico:
         return uuid.uuid4().hex
 
     def responder(self, pergunta: str, *, thread_id: str) -> SaidaConsulta:
-        with self._trava:
-            grafo = self._grafo(thread_id)
-            final = grafo.invoke(
-                {"pergunta": pergunta, "thread_id": thread_id}, self._config(thread_id)
+        with self._sessao("perguntar", thread_id) as sessao:
+            with self._trava:
+                grafo = self._grafo(thread_id, sessao=sessao)
+                final = grafo.invoke(
+                    {"pergunta": pergunta, "thread_id": thread_id}, self._config(thread_id)
+                )
+            saida = _saida_consulta(thread_id, final, sessao.id_do_trace())
+            # `final["pergunta"]` e não o argumento recebido: o que viaja para o
+            # trace é o texto que saiu do guardrail de entrada, com o CPF já
+            # mascarado. É a razão de a sessão só registrar depois da execução.
+            sessao.registrar(
+                input={"pergunta": final.get("pergunta", "")},
+                output=saida.model_dump(mode="json"),
             )
-        return _saida_consulta(thread_id, final)
+        return saida
 
     def decidir(self, decisao: Decisao) -> SaidaDecisao:
-        with self._trava:
-            configuracao = self._config(decisao.thread_id)
-            if self._checkpointer.get_tuple(configuracao) is None:
-                raise ConsultaNaoEncontrada(decisao.thread_id)
-            grafo = self._grafo(decisao.thread_id)
-            if not _tem_aprovacao_pendente(grafo.get_state(configuracao)):
-                raise NadaAAprovar(decisao.thread_id)
-            final = grafo.invoke(
-                Command(
-                    resume={
-                        "aprovado": decisao.aprovado,
-                        "revisor": decisao.revisor,
-                        "observacao": decisao.observacao,
-                    }
-                ),
-                configuracao,
+        """A segunda metade da conversa. Trace próprio, mesma `session_id`.
+
+        São duas requisições separadas por tempo humano — juntá-las num trace só
+        exigiria manter um span aberto à espera de gente. Quem as costura no
+        painel é o `thread_id`, que a sessão publica como `session_id`.
+        """
+        with self._sessao("aprovar", decisao.thread_id) as sessao:
+            with self._trava:
+                configuracao = self._config(decisao.thread_id)
+                if self._checkpointer.get_tuple(configuracao) is None:
+                    raise ConsultaNaoEncontrada(decisao.thread_id)
+                grafo = self._grafo(decisao.thread_id, sessao=sessao)
+                if not _tem_aprovacao_pendente(grafo.get_state(configuracao)):
+                    raise NadaAAprovar(decisao.thread_id)
+                final = grafo.invoke(
+                    Command(
+                        resume={
+                            "aprovado": decisao.aprovado,
+                            "revisor": decisao.revisor,
+                            "observacao": decisao.observacao,
+                        }
+                    ),
+                    configuracao,
+                )
+            saida = _saida_decisao(decisao.thread_id, final, sessao.id_do_trace())
+            sessao.registrar(
+                input={"aprovado": decisao.aprovado, "revisor": decisao.revisor},
+                output=saida.model_dump(mode="json"),
             )
-        return _saida_decisao(decisao.thread_id, final)
+        return saida
 
     def saude(self) -> SaidaSaude:
         """Estado local, sem tocar a rede. Um `/saude` que chama a Groq mede a Groq."""
@@ -325,6 +384,14 @@ class Servico:
             # configurado, não que ele está no ar. Afirmar disponibilidade
             # exigiria bater lá — e aí `/saude` passaria a medir o CRM.
             "crm": {"configurado": self._cliente_crm is not None, "base_url": self._crm_base_url},
+            # Diz *por que* não há trace, e não só que não há: um ambiente
+            # com "chaves_ausentes" e um com "pacote_ausente" mandam quem
+            # opera para lugares diferentes.
+            "observabilidade": {
+                "ativo": self._rastreador.ativo,
+                "motivo": getattr(self._rastreador, "motivo", ""),
+                "versao_ficha": versao_da_ficha(),
+            },
         }
         degradado = catalogo["normas"] == 0 or not componentes["crm"]["configurado"]
         return SaidaSaude(
@@ -344,12 +411,13 @@ def _tem_aprovacao_pendente(instantaneo: Any) -> bool:
     return any(getattr(tarefa, "interrupts", ()) for tarefa in getattr(instantaneo, "tasks", ()))
 
 
-def _saida_consulta(thread_id: str, final: Mapping[str, Any]) -> SaidaConsulta:
+def _saida_consulta(thread_id: str, final: Mapping[str, Any], trace_id: str = "") -> SaidaConsulta:
     interrupcoes = final.get("__interrupt__") or ()
     if interrupcoes:
         pedido = getattr(interrupcoes[0], "value", {}) or {}
         return SaidaConsulta(
             thread_id=thread_id,
+            trace_id=trace_id,
             estado="aguardando_aprovacao",
             proposta=pedido.get("proposta"),
             achados_pii=list(final.get("achados_pii", [])),
@@ -357,6 +425,7 @@ def _saida_consulta(thread_id: str, final: Mapping[str, Any]) -> SaidaConsulta:
         )
     return SaidaConsulta(
         thread_id=thread_id,
+        trace_id=trace_id,
         estado=final.get("encerramento") or "respondida",
         resposta=final.get("resposta", ""),
         citacoes=list(final.get("citacoes", [])),
@@ -366,19 +435,21 @@ def _saida_consulta(thread_id: str, final: Mapping[str, Any]) -> SaidaConsulta:
     )
 
 
-def _saida_decisao(thread_id: str, final: Mapping[str, Any]) -> SaidaDecisao:
+def _saida_decisao(thread_id: str, final: Mapping[str, Any], trace_id: str = "") -> SaidaDecisao:
     interrupcoes = final.get("__interrupt__") or ()
     if interrupcoes:
         # O agente propôs outra escrita depois de resolvida a primeira. Continua
         # sendo decisão humana: a API devolve o mesmo estado de espera.
         return SaidaDecisao(
             thread_id=thread_id,
+            trace_id=trace_id,
             estado="aguardando_aprovacao",
             registro=final.get("registro"),
             passos=int(final.get("passo", 0)),
         )
     return SaidaDecisao(
         thread_id=thread_id,
+        trace_id=trace_id,
         estado=final.get("encerramento") or "respondida",
         resposta=final.get("resposta", ""),
         citacoes=list(final.get("citacoes", [])),

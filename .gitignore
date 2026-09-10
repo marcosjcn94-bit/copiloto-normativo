@@ -28,3 +28,4 @@ inventario.json
 .DS_Store
 Thumbs.db
 .vscode/
+.waku/

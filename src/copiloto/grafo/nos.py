@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import tomllib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,10 @@ from langgraph.types import interrupt
 from copiloto.grafo.estado import EstadoDoAgente, gravar, transcricao
 from copiloto.grafo.guardrails import SEM_BASE_NORMATIVA, sanear_pergunta, validar_resposta
 from copiloto.llm.provedor import Mensagem, ProvedorLLM
+from copiloto.observabilidade.tracing import Sessao, sessao_nula
+from copiloto.tools.buscar_normativo import NOME as TOOL_BUSCAR
+from copiloto.tools.consultar_catalogo import NOME as TOOL_CATALOGO
+from copiloto.tools.registrar_crm import NOME as TOOL_CRM
 from copiloto.tools.registrar_crm import ErroDeCrm
 from copiloto.tools.registro import ToolRegistrada, executar_com_autocorrecao
 from copiloto.tools.schemas import (
@@ -44,13 +48,21 @@ logger = logging.getLogger(__name__)
 # O prompt orienta; ele não garante. Tudo que pode ser conferido por código está
 # em `guardrails.py`, e o que está escrito aqui é o que não dá para verificar:
 # a divisão de trabalho entre as tools e o tom da resposta.
+#
+# **Os nomes das tools vêm das próprias tools, e isso custou um defeito para ser
+# aprendido.** Escritos à mão, este prompt mandava o modelo chamar
+# `consultar_catalogo_normas` e `registrar_consulta_crm`, que não existem no
+# registro: toda pergunta de metadado gastava uma volta inteira do grafo em
+# `tool_desconhecida` antes de a autocorreção acertar o nome. Nenhum teste pegou,
+# porque os testes montam registro próprio. Agora o nome é o mesmo objeto nos dois
+# lados, e `evals/rodar.py` verifica a correspondência a cada push.
 PROMPT_SISTEMA = (
     "Você é um copiloto normativo do Banco Central do Brasil. Responde localizando a norma, "
     "o artigo e o status de vigência, sempre citando a fonte.\n"
-    "- Use buscar_normativo para perguntas sobre o conteúdo das normas.\n"
-    "- Use consultar_catalogo_normas para perguntas de metadado (quais normas, de que ano, "
+    f"- Use {TOOL_BUSCAR} para perguntas sobre o conteúdo das normas.\n"
+    f"- Use {TOOL_CATALOGO} para perguntas de metadado (quais normas, de que ano, "
     "quais estão vigentes). Metadado é consulta exata, não busca por similaridade.\n"
-    "- Use registrar_consulta_crm apenas quando o usuário pedir registro da consulta. "
+    f"- Use {TOOL_CRM} apenas quando o usuário pedir registro da consulta. "
     "A gravação depende de aprovação humana.\n"
     "- Cite exatamente como a tool devolveu, no formato "
     "'Resolução BCB nº 85, de 2021, art. 7º'. Toda citação é conferida por código contra os "
@@ -87,12 +99,18 @@ class Dependencias:
 
     `escrever` é `None` por padrão de propósito: um ambiente que não configurou o
     CRM não escreve, e diz que não escreveu. O padrão silencioso seria escrever.
+
+    `sessao` é a da Fase 7 e é dependência pela mesma razão que o provedor: ela
+    vale por execução (carrega o `thread_id` no trace) e não é serializável, então
+    não pode morar no estado. O padrão é a sessão nula — montar grafo sem falar de
+    observabilidade continua sendo possível, que é o que quase todo teste faz.
     """
 
     provedor: ProvedorLLM
     registro: Mapping[str, ToolRegistrada]
     parametros: ParametrosDoGrafo
     escrever: Callable[[PropostaDeRegistro], SaidaRegistrarCrm] | None = None
+    sessao: Sessao = field(default_factory=sessao_nula)
 
 
 Atualizacao = dict[str, Any]
@@ -143,13 +161,19 @@ def criar_deliberar(deps: Dependencias) -> No:
             Mensagem.sistema(PROMPT_SISTEMA),
             Mensagem.usuario(estado.get("pergunta", "")),
         ]
-        ciclo = executar_com_autocorrecao(
-            deps.provedor,
-            mensagens,
-            registro=deps.registro,
-            max_autocorrecao=deps.parametros.max_autocorrecao,
-            temperatura=deps.parametros.temperatura,
-        )
+        # O span envolve o trabalho de verdade, não o resumo dele: a geração que o
+        # `ProvedorRastreado` abre aninha aqui dentro, então o trace mostra quanto
+        # da volta foi LLM e quanto foi execução de tool.
+        with deps.sessao.no("deliberar.ciclo", tipo="chain") as observacao:
+            ciclo = executar_com_autocorrecao(
+                deps.provedor,
+                mensagens,
+                registro=deps.registro,
+                max_autocorrecao=deps.parametros.max_autocorrecao,
+                temperatura=deps.parametros.temperatura,
+                sessao=deps.sessao,
+            )
+            observacao.atualizar(output=_resumo_do_ciclo(ciclo))
 
         atualizacao: Atualizacao = {"passo": passo, "mensagens": gravar(list(ciclo.mensagens))}
         if ciclo.abortado:
@@ -173,6 +197,27 @@ def criar_deliberar(deps: Dependencias) -> No:
         return atualizacao
 
     return deliberar
+
+
+def _resumo_do_ciclo(ciclo) -> dict[str, Any]:
+    """O resumo da volta: o que foi chamado e o que reprovou.
+
+    Aqui só cabe contagem e nome. O conteúdo dos trechos aparece um nível abaixo,
+    na observação de cada tool e na entrada da geração — que é onde ele significa
+    alguma coisa, porque é lá que se lê *o que o modelo tinha em mãos* ao decidir.
+    Repetir isso no resumo do nó só inflaria o payload.
+
+    O que este resumo alimenta é a taxa de erro de tool medida em
+    `evals/rodar.py`: `SessaoContadora` lê exatamente estas chaves.
+    """
+    return {
+        "tools_chamadas": [r.tool for r in ciclo.resultados],
+        "erros_de_tool": [
+            {"tool": r.tool, "tipo": r.erro.tipo} for r in ciclo.resultados if r.erro is not None
+        ],
+        "tentativas_de_autocorrecao": ciclo.tentativas,
+        "abortado": ciclo.abortado,
+    }
 
 
 def _acumular_trechos(estado: EstadoDoAgente, resultados) -> list[dict[str, Any]]:

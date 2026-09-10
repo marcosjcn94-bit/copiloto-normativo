@@ -156,3 +156,48 @@ def test_citar_norma_revogada_com_aviso_passa() -> None:
     )
 
     assert veredito.aprovada
+
+
+# --- número de norma com quatro dígitos, sem separador de milhar --------------
+#
+# Toda esta seção existe por causa de um defeito encontrado na Fase 7, e não por
+# completude: o extrator aceitava só `\d{1,3}(\.\d{3})*`, que casa `85` e
+# `4.893` mas para no primeiro dígito de `5274`. Como o catálogo do BCB grava
+# `Circular nº 3979` e `Resolução CMN nº 5274` sem separador, e as tools devolvem
+# a citação como ela está no catálogo, toda resposta correta sobre essas normas
+# era reprovada com `sem_citacao`, queimava as duas tentativas e terminava em
+# «não encontrei base normativa». As fixtures de todos os testes anteriores usavam
+# `85` e `4.893` — foi a camada 1 de `evals/rodar.py`, sobre o corpus real, que
+# viu. As duas grafias ficam fixadas abaixo.
+
+
+def test_extrai_numero_de_quatro_digitos_sem_separador() -> None:
+    (citacao,) = extrair_citacoes("Conforme a Circular nº 3979, de 2020, art. 5º.")
+
+    assert (citacao.numero, citacao.ano, citacao.artigo) == ("3979", "2020", "5")
+
+
+def test_extrai_numero_com_separador_de_milhar() -> None:
+    (citacao,) = extrair_citacoes("Conforme a Resolução CMN nº 4.893, de 2021, art. 3º.")
+
+    assert citacao.numero == "4893"
+
+
+def test_as_duas_grafias_do_mesmo_numero_combinam() -> None:
+    """`4.893` e `4893` são a mesma norma: o ponto é separador, não identidade."""
+    (com_ponto,) = extrair_citacoes("Resolução CMN nº 4.893, de 2021, art. 3º")
+    (sem_ponto,) = extrair_citacoes("Resolução CMN nº 4893, de 2021, art. 3º")
+
+    assert com_ponto.combina(sem_ponto)
+
+
+def test_valida_resposta_que_cita_norma_de_quatro_digitos() -> None:
+    """A regressão de ponta a ponta: era isto que virava recusa em produção."""
+    trecho = trecho_citado(norma="Circular nº 3979, de 2020", artigo="Art. 5º")
+
+    veredito = validar_resposta(
+        "Conforme a Circular nº 3979, de 2020, art. 5º, o prazo é o previsto no artigo.",
+        [trecho],
+    )
+
+    assert veredito.aprovada, veredito.motivo

@@ -42,6 +42,21 @@ max_tentativas_resposta = 2
 temperatura      = 0.0     # domínio normativo não admite criatividade
 max_tokens_ctx   = 8000    # orçamento de contexto
 
+# **O teto que manda não é este; é o do plano.** O free tier da Groq publica
+# `x-ratelimit-limit-tokens = 8000` — oito mil tokens por minuto somados a TODAS
+# as chamadas, e uma pergunta gasta várias voltas do agente. O 8000 acima
+# coincidir com aquele número é coincidência, e ela engana: aqui é por
+# requisição, lá é por minuto.
+#
+# Medido no trace da primeira consulta real da Fase 7: 1ª chamada 1.362 tokens de
+# entrada; 2ª chamada, depois de UMA busca com k_final=5, 7.655; a 3ª estourou com
+# HTTP 413. Cinco artigos inteiros de norma esgotam a janela sozinhos.
+#
+# Quem escolhe entre baixar `k_final` (custa recall — ver evals/ablacao.md),
+# truncar o texto do trecho, ou aceitar que consultas longas falhem no free tier,
+# é decisão de produto e ainda não foi tomada. `evals/rodar.py` mede o orçamento
+# real em `c1.orcamento_real` para que a escolha seja feita sobre número.
+
 [evals]
 faithfulness_min = 0.95
 relevancia_min   = 0.85

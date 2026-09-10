@@ -1,6 +1,16 @@
-# Lint + suíte hermética em Linux. Subconjunto da Fase 7, antecipado para dar sinal de
-# plataforma (encoding, separador de caminho) antes do deploy Linux da Fase 8.
-# Os testes marcados `rede` e `corpus` não rodam aqui: /data e /indices estão no .gitignore.
+# Lint, suíte hermética e camada 1 dos evals, em Linux (Fase 7).
+#
+# O que NÃO roda aqui, e por quê: os testes marcados `rede` e `corpus`, e as
+# camadas 2 e 3 dos evals. `/data` e `/indices` estão no .gitignore, então o
+# runner não tem catálogo nem índice; reconstruí-los exigiria bater no site do
+# BCB e baixar 130 MB de modelo ONNX a cada push. A camada 2 (recall@5 e MRR) é
+# medida na máquina e fica registrada em `evals/ablacao.md` e
+# `evals/resultados.json`, com o commit anotado.
+#
+# A camada 1 roda inteira, sem corpus: contrato das tools, correspondência entre
+# os nomes de tool do prompt e os do registro, e orçamento de contexto. As
+# verificações que precisariam de corpus aparecem no relatório como puladas, com
+# o motivo — `rodar.py` não devolve verde para o que não mediu.
 name: CI
 
 on:
@@ -39,3 +49,19 @@ jobs:
       # com o diretório atual no sys.path. É a mesma invocação do CLAUDE.md.
       - name: Testes herméticos
         run: python -m pytest -m "not rede and not corpus"
+
+      # Sai com código 1 se qualquer verificação executada reprovar. O
+      # `resultados.json` gerado aqui não é commitado — vale o da máquina, que é
+      # o único que roda as três camadas.
+      - name: Evals — camada 1 (determinística)
+        run: python evals/rodar.py --camada 1
+
+      - name: Publicar o relatório dos evals
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-evals
+          path: |
+            evals/relatorio.md
+            evals/resultados.json
+          if-no-files-found: warn

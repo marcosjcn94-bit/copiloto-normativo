@@ -21,15 +21,25 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from copiloto.recuperacao import MODOS, Modo, Recuperador, Trecho
+from copiloto.recuperacao import MODOS, Modo, Recuperador
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from evals.metricas import (  # noqa: E402 — a raiz precisa entrar no path antes
+    PerguntaDeGabarito,
+    carregar_golden,
+    mrr,
+    posto_do_acerto,
+    recall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +53,6 @@ ROTULOS: dict[Modo, str] = {
 
 
 @dataclass(frozen=True, slots=True)
-class Pergunta:
-    id: str
-    pergunta: str
-    grupo: str
-    esperado: frozenset[tuple[str, int]]
-
-
-@dataclass(frozen=True, slots=True)
 class Metricas:
     modo: Modo
     perguntas: int
@@ -59,61 +61,25 @@ class Metricas:
     sem_acerto: tuple[str, ...]
 
 
-def carregar_golden(caminho: Path) -> list[Pergunta]:
-    """Lê o gabarito, ficando só com o que tem artigo esperado."""
-    perguntas: list[Pergunta] = []
-    for linha in caminho.read_text(encoding="utf-8").splitlines():
-        if not linha.strip():
-            continue
-        registro = json.loads(linha)
-        if registro["tipo"] != "rag":
-            continue
-        perguntas.append(
-            Pergunta(
-                id=registro["id"],
-                pergunta=registro["pergunta"],
-                grupo=registro.get("grupo", ""),
-                esperado=frozenset(
-                    (e["id_norma"], int(e["numero_artigo"])) for e in registro["esperado"]
-                ),
-            )
-        )
-    return perguntas
+def medir(recuperador: Recuperador, perguntas: Sequence[PerguntaDeGabarito], *, modo: Modo, k: int):
+    """Roda o pipeline em um modo e devolve `recall@k` e MRR.
 
-
-def posto_do_acerto(trechos: Sequence[Trecho], esperado: frozenset[tuple[str, int]]) -> int | None:
-    """Posição (1-based) do primeiro trecho correto, ou `None` se não veio nenhum.
-
-    `esperado` é um conjunto porque há perguntas cuja resposta certa aparece em
-    mais de uma norma do corpus — quatro normas tratam do mesmo tema para
-    destinatários diferentes. Exigir uma delas em particular mediria sorte.
+    As contas vêm de `evals/metricas.py`, não daqui: `recall@5` na tabela de
+    ablação e `recall@5` no relatório da Fase 7 têm de ser o mesmo número
+    calculado do mesmo jeito, ou a comparação entre eles não significa nada.
     """
-    for posto, trecho in enumerate(trechos, start=1):
-        if (trecho.id_norma, trecho.numero_artigo) in esperado:
-            return posto
-    return None
-
-
-def medir(recuperador: Recuperador, perguntas: Sequence[Pergunta], *, modo: Modo, k: int):
-    """Roda o pipeline em um modo e devolve `recall@k` e MRR."""
-    acertos = 0
-    reciprocos = 0.0
-    falhas: list[str] = []
-    for pergunta in perguntas:
-        trechos = recuperador.buscar(pergunta.pergunta, modo=modo, k_final=k)
-        posto = posto_do_acerto(trechos, pergunta.esperado)
-        if posto is None:
-            falhas.append(pergunta.id)
-        else:
-            acertos += 1
-            reciprocos += 1.0 / posto
-    total = len(perguntas)
+    postos = [
+        posto_do_acerto(
+            recuperador.buscar(pergunta.pergunta, modo=modo, k_final=k), pergunta.esperado
+        )
+        for pergunta in perguntas
+    ]
     return Metricas(
         modo=modo,
-        perguntas=total,
-        recall=acertos / total if total else 0.0,
-        mrr=reciprocos / total if total else 0.0,
-        sem_acerto=tuple(falhas),
+        perguntas=len(perguntas),
+        recall=recall(postos),
+        mrr=mrr(postos),
+        sem_acerto=tuple(p.id for p, posto in zip(perguntas, postos, strict=True) if posto is None),
     )
 
 
@@ -235,7 +201,7 @@ def main() -> None:
     argumentos = analisador.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
-    perguntas = carregar_golden(RAIZ / "evals" / "golden.jsonl")
+    perguntas = carregar_golden(RAIZ / "evals" / "golden.jsonl", tipo="rag")
     recuperador = Recuperador.abrir(RAIZ)
 
     resultados = []

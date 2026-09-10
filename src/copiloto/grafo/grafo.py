@@ -30,20 +30,31 @@ valor de usar grafo em vez de um `while`.
 **O checkpointer não é detalhe de infraestrutura.** É ele que faz o
 `interrupt()` valer: o estado da conversa fica no SQLite, e retomar depois de o
 processo morrer continua de onde parou, sem repetir as chamadas de LLM já pagas.
+
+**O trace envolve cada nó, não o grafo inteiro (Fase 7).** `montar_grafo` embrulha
+cada função de nó num span antes de registrá-la. É aqui e não dentro dos nós
+porque a instrumentação é uma preocupação do desenho do grafo: um nó novo nasce
+observado sem que ninguém se lembre de instrumentá-lo, e nenhum nó ganha uma
+linha de `try/finally` que não tem a ver com o que ele decide.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from copiloto.grafo.estado import EstadoDoAgente
 from copiloto.grafo.nos import (
+    Atualizacao,
     Dependencias,
+    No,
     ParametrosDoGrafo,
     aprovar,
     carregar_parametros,
@@ -57,6 +68,7 @@ from copiloto.grafo.nos import (
     rumo_apos_verificar,
     sanear,
 )
+from copiloto.observabilidade.tracing import TipoDeObservacao
 
 __all__ = [
     "Dependencias",
@@ -68,16 +80,88 @@ __all__ = [
 ]
 
 
+# O que de cada atualização de estado vale a pena aparecer no trace. A lista é
+# explícita e curta de propósito: nenhuma chave que carregue texto de norma,
+# transcrição ou pergunta entra aqui. Quem quiser ler o conteúdo lê o checkpoint,
+# que fica na máquina; o trace vai para um terceiro.
+CHAVES_OBSERVAVEIS = (
+    "passo",
+    "encerramento",
+    "motivo",
+    "tentativa_resposta",
+    "achados_pii",
+)
+
+
+def _observavel(atualizacao: Mapping[str, Any]) -> dict[str, Any]:
+    """O resumo do que o nó decidiu, sem o texto do que ele leu."""
+    resumo = {k: atualizacao[k] for k in CHAVES_OBSERVAVEIS if k in atualizacao}
+    if "trechos" in atualizacao:
+        resumo["trechos_acumulados"] = len(atualizacao["trechos"])
+    if "citacoes" in atualizacao:
+        resumo["citacoes"] = list(atualizacao["citacoes"])
+    if "proposta" in atualizacao:
+        resumo["propos_escrita"] = atualizacao["proposta"] is not None
+    if "registro" in atualizacao:
+        registro = atualizacao["registro"] or {}
+        resumo["registrado"] = bool(registro.get("registrado"))
+    return resumo
+
+
+# O tipo de observação de cada nó, e cada escolha diz o que o nó é. `sanear` e
+# `verificar` são `guardrail` porque é isso que eles são — e porque o Langfuse
+# deixa filtrar guardrails para medir quanto o de saída reprova. `deliberar` é
+# `agent`: é o laço que decide e chama tool, e é o nó que vira nó do agent graph.
+# `escrever` é `tool` porque é a única ação com efeito fora do processo.
+TIPO_DO_NO: dict[str, TipoDeObservacao] = {
+    "sanear": "guardrail",
+    "deliberar": "agent",
+    "verificar": "guardrail",
+    "aprovar": "span",
+    "escrever": "tool",
+    "recusar": "span",
+}
+
+
+def _observado(no: No, *, nome: str, deps: Dependencias) -> No:
+    """O mesmo nó, dentro de um span. Assinatura idêntica — o grafo não percebe.
+
+    `GraphBubbleUp` é o canal de controle do LangGraph, e o `interrupt()` do nó
+    `aprovar` viaja por ele. Deixá-lo escapar como exceção qualquer pintaria de
+    vermelho, em todo trace com aprovação humana, justamente o nó que funcionou:
+    parar e esperar é o comportamento correto, não uma falha.
+    """
+
+    def envolvido(estado: EstadoDoAgente) -> Atualizacao:
+        with deps.sessao.no(nome, tipo=TIPO_DO_NO.get(nome, "span")) as observacao:
+            try:
+                atualizacao = no(estado)
+            except GraphBubbleUp:
+                observacao.atualizar(output={"pausado": True, "motivo": "aguardando_humano"})
+                raise
+            except Exception as erro:
+                observacao.atualizar(level="ERROR", status_message=str(erro))
+                raise
+            observacao.atualizar(output=_observavel(atualizacao))
+            return atualizacao
+
+    envolvido.__name__ = nome
+    return envolvido
+
+
 def montar_grafo(deps: Dependencias) -> StateGraph:
     """O grafo sem checkpointer — útil para desenhar e inspecionar."""
     grafo: StateGraph = StateGraph(EstadoDoAgente)
 
-    grafo.add_node("sanear", sanear)
-    grafo.add_node("deliberar", criar_deliberar(deps))
-    grafo.add_node("verificar", criar_verificar(deps))
-    grafo.add_node("aprovar", aprovar)
-    grafo.add_node("escrever", criar_escrever(deps))
-    grafo.add_node("recusar", recusar)
+    for nome, no in (
+        ("sanear", sanear),
+        ("deliberar", criar_deliberar(deps)),
+        ("verificar", criar_verificar(deps)),
+        ("aprovar", aprovar),
+        ("escrever", criar_escrever(deps)),
+        ("recusar", recusar),
+    ):
+        grafo.add_node(nome, _observado(no, nome=nome, deps=deps))
 
     grafo.add_edge(START, "sanear")
     grafo.add_conditional_edges("sanear", rumo_apos_sanear, {"deliberar": "deliberar", "fim": END})

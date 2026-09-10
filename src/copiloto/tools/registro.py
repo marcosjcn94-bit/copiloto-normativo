@@ -43,6 +43,7 @@ from copiloto.llm.provedor import (
     ProvedorLLM,
     RespostaLLM,
 )
+from copiloto.observabilidade.tracing import Sessao, sessao_nula
 from copiloto.tools import buscar_normativo as mod_busca
 from copiloto.tools import consultar_catalogo as mod_catalogo
 from copiloto.tools import registrar_crm as mod_crm
@@ -267,6 +268,32 @@ def despachar(chamada: ChamadaDeTool, registro: Mapping[str, ToolRegistrada]) ->
     return ResultadoDeTool(tool=tool.nome, saida=saida)
 
 
+def _despachar_observado(
+    chamada: ChamadaDeTool, registro: Mapping[str, ToolRegistrada], sessao: Sessao
+) -> ResultadoDeTool:
+    """`despachar` dentro de uma observação do trace, com o tipo certo.
+
+    O tipo sai de `escrita`, e não de uma tabela paralela de nomes: leitura é
+    `retriever` e escrita é `tool`. Derivar do contrato que a tool já declara
+    significa que uma tool nova nasce com o tipo certo sem que ninguém precise
+    lembrar de cadastrá-la em outro lugar.
+    """
+    tool = registro.get(chamada.nome)
+    tipo = "tool" if tool is None or tool.escrita else "retriever"
+    with sessao.no(chamada.nome, tipo=tipo) as observacao:
+        observacao.atualizar(input=chamada.argumentos)
+        resultado = despachar(chamada, registro)
+        if resultado.erro is not None:
+            observacao.atualizar(
+                output=resultado.erro.para_modelo(),
+                level="WARNING",
+                status_message=resultado.erro.tipo,
+            )
+        else:
+            observacao.atualizar(output=resultado.para_modelo())
+        return resultado
+
+
 def _problemas(erro: ValidationError) -> list[Problema]:
     """Traduz `ValidationError` para algo que o modelo consiga agir em cima."""
     problemas = []
@@ -315,6 +342,7 @@ def executar_com_autocorrecao(
     registro: Mapping[str, ToolRegistrada],
     max_autocorrecao: int,
     temperatura: float | None = None,
+    sessao: Sessao | None = None,
 ) -> CicloDeAutocorrecao:
     """Pede tools ao modelo, valida e devolve o erro para ele corrigir.
 
@@ -326,6 +354,13 @@ def executar_com_autocorrecao(
     Erro de execução (`falha_de_execucao`) não gera correção: argumento válido que
     quebrou na execução é problema do sistema, não do modelo — reformular o
     argumento não conserta e só queima tentativa.
+
+    **Por que a sessão de trace desce até aqui (Fase 7).** É o único lugar que vê
+    cada despacho isolado, e é isso que o trace precisa mostrar: uma observação
+    por chamada de tool, irmã da geração que a pediu. Envolver o laço inteiro num
+    span só daria o total e esconderia qual chamada demorou ou reprovou — que é
+    exatamente a pergunta que se leva a um trace. `None` mantém o módulo utilizável
+    sem observabilidade nenhuma, que é como quase todo teste o chama.
     """
     if max_autocorrecao < 0:
         raise ValueError("max_autocorrecao precisa ser >= 0")
@@ -346,7 +381,10 @@ def executar_com_autocorrecao(
             )
 
         transcricao.append(Mensagem.assistente(resposta.conteudo, resposta.chamadas))
-        resultados = [despachar(chamada, registro) for chamada in resposta.chamadas]
+        resultados = [
+            _despachar_observado(chamada, registro, sessao or sessao_nula())
+            for chamada in resposta.chamadas
+        ]
         for chamada, resultado in zip(resposta.chamadas, resultados, strict=True):
             transcricao.append(Mensagem.resultado_de_tool(chamada.id, resultado.para_modelo()))
 

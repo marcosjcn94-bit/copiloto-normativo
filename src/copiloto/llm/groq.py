@@ -7,6 +7,14 @@ playground, catálogo e API de inferência —, e o endpoint novo
 arquivo e nada mais: o grafo, as tools e os testes falam com o `Protocol` de
 `provedor.py`. Esse é o argumento da camada de provedor, e agora ele tem prova.
 
+**E por que não é mais o Llama 3.3.** Em 10/09/2026, durante a Fase 7, o
+`llama-3.3-70b-versatile` sumiu do catálogo da Groq e passou a devolver 404. O
+sintoma chegou disfarçado: `ErroDeProvedor: disjuntor aberto`, porque o
+`resiliencia.py` abriu o circuito depois das tentativas. **Um 404 de modelo
+inexistente não é falha transitória e não deveria consumir retentativa** — está
+anotado como a próxima correção deste arquivo, e a Fase 7 o encontrou porque a
+camada 3 dos evals exercita o provedor de ponta a ponta.
+
 A API é compatível com a da OpenAI, então `azure_openai.py` reusa a mesma
 tradução de mensagens; só mudam a URL e o header de autenticação.
 """
@@ -39,7 +47,17 @@ from copiloto.resiliencia import (
 logger = logging.getLogger(__name__)
 
 ENDPOINT_PADRAO = "https://api.groq.com/openai/v1"
-MODELO_PADRAO = "llama-3.3-70b-versatile"
+# O `llama-3.3-70b-versatile` saiu do catálogo da Groq: em 10/09/2026 ele passou a
+# responder 404 `model_not_found`, e com ele o copiloto parou de responder. É a
+# **segunda** morte de fornecedor deste projeto, depois do GitHub Models em
+# 30/07/2026 — e as duas custaram só este arquivo, que é o argumento da camada de
+# provedor do §3.2 medido em incidentes reais e não em intenção.
+#
+# O substituto foi escolhido testando o catálogo vivo com tool calling de verdade,
+# não pelo nome: `openai/gpt-oss-20b` respondeu sem chamar a tool e `groq/compound`
+# recusa `tools` com HTTP 400. Um modelo que não chama tool não serve a este agente,
+# e isso não aparece na ficha técnica de nenhum deles.
+MODELO_PADRAO = "openai/gpt-oss-120b"
 
 # O modelo pode devolver `arguments` que não é JSON válido. O texto cru é
 # preservado sob esta chave em vez de virar exceção: com `extra='forbid'` no
