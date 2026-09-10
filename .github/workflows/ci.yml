@@ -1,0 +1,38 @@
+# Lint + suíte hermética em Linux. Subconjunto da Fase 7, antecipado para dar sinal de
+# plataforma (encoding, separador de caminho) antes do deploy Linux da Fase 8.
+# Os testes marcados `rede` e `corpus` não rodam aqui: /data e /indices estão no .gitignore.
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-e-testes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar dependências
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Formatação
+        run: ruff format --check .
+
+      - name: Testes herméticos
+        run: pytest -m "not rede and not corpus"
