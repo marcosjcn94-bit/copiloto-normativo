@@ -1,0 +1,295 @@
+{
+  "name": "Triagem normativa",
+  "meta": {
+    "descricao": "Fase 6. Dois gatilhos, porque a autonomia é nível 2: POST /webhook/triagem faz a consulta e devolve a proposta de registro; POST /webhook/triagem-aprovacao leva a decisão humana ao /aprovar e confere o registro no CRM falso. Nenhuma URL é literal — COPILOTO_URL e CRM_URL vêm do ambiente do n8n (ver infra/docker-compose.yml)."
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "webhook-triagem",
+      "name": "Recebe a triagem",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-620, 0],
+      "webhookId": "triagem-normativa",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triagem",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "monta-pergunta",
+      "name": "Monta a pergunta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-400, 0],
+      "notes": "O id do cliente entra no texto porque a API só recebe pergunta e thread_id: é o modelo que decide chamar registrar_crm, e ele precisa do cliente para montar a proposta.",
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pergunta",
+              "name": "pergunta",
+              "type": "string",
+              "value": "=Cliente {{ $json.body.id_cliente }}, canal webhook. {{ $json.body.pergunta }} Registre esta consulta no CRM."
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "pergunta-copiloto",
+      "name": "Pergunta ao copiloto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-180, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.COPILOTO_URL }}/perguntar",
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "pergunta",
+              "value": "={{ $json.pergunta }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "precisa-aprovacao",
+      "name": "Precisa de aprovação humana?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [60, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "estado-aguardando",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "aguardando_aprovacao",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "responde-proposta",
+      "name": "Devolve a proposta para o humano",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, -120],
+      "notes": "A resposta carrega o thread_id e o caminho da aprovação. Quem grava no CRM é o segundo gatilho, depois de uma decisão humana.",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: $json.estado, thread_id: $json.thread_id, proposta: $json.proposta, aprovar_em: '/webhook/triagem-aprovacao' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "responde-consulta",
+      "name": "Devolve a resposta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, 120],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: $json.estado, thread_id: $json.thread_id, resposta: $json.resposta, citacoes: $json.citacoes }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "webhook-aprovacao",
+      "name": "Recebe a decisão humana",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-620, 340],
+      "webhookId": "triagem-normativa-aprovacao",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triagem-aprovacao",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "registra-decisao",
+      "name": "Leva a decisão ao copiloto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-380, 340],
+      "notes": "revisor é obrigatório na API: aprovação sem nome não é aprovação humana.",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.COPILOTO_URL }}/aprovar",
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "thread_id",
+              "value": "={{ $json.body.thread_id }}"
+            },
+            {
+              "name": "aprovado",
+              "value": "={{ $json.body.aprovado }}"
+            },
+            {
+              "name": "revisor",
+              "value": "={{ $json.body.revisor }}"
+            },
+            {
+              "name": "observacao",
+              "value": "={{ $json.body.observacao || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "confere-crm",
+      "name": "Confere o registro no CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-140, 340],
+      "notes": "O trace visível do critério de pronto: o que o CRM tem para esta thread, lido do próprio CRM e não do log da API.",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.CRM_URL }}/registros",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "responde-registro",
+      "name": "Devolve o registro gravado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [100, 340],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ thread_id: $('Leva a decisão ao copiloto').item.json.thread_id, estado: $('Leva a decisão ao copiloto').item.json.estado, resposta: $('Leva a decisão ao copiloto').item.json.resposta, registro: $('Leva a decisão ao copiloto').item.json.registro, no_crm: $json.registros }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Recebe a triagem": {
+      "main": [
+        [
+          {
+            "node": "Monta a pergunta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta a pergunta": {
+      "main": [
+        [
+          {
+            "node": "Pergunta ao copiloto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pergunta ao copiloto": {
+      "main": [
+        [
+          {
+            "node": "Precisa de aprovação humana?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa de aprovação humana?": {
+      "main": [
+        [
+          {
+            "node": "Devolve a proposta para o humano",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Devolve a resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recebe a decisão humana": {
+      "main": [
+        [
+          {
+            "node": "Leva a decisão ao copiloto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leva a decisão ao copiloto": {
+      "main": [
+        [
+          {
+            "node": "Confere o registro no CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confere o registro no CRM": {
+      "main": [
+        [
+          {
+            "node": "Devolve o registro gravado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

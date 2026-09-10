@@ -99,11 +99,23 @@ class Recuperador:
         self._catalogo = catalogo
 
     @classmethod
-    def abrir(cls, raiz: Path, *, adaptador: AdaptadorVetorial | None = None) -> Recuperador:
+    def abrir(
+        cls,
+        raiz: Path,
+        *,
+        adaptador: AdaptadorVetorial | None = None,
+        catalogo: sqlite3.Connection | None = None,
+    ) -> Recuperador:
         """Monta o pipeline a partir dos artefatos que a Fase 2 deixou em disco.
 
         `adaptador` é injetável para que trocar Chroma por Azure AI Search não
         precise de nenhuma alteração aqui — é a razão de o `Protocol` existir.
+
+        `catalogo` é injetável pelo mesmo motivo prático da Fase 6: a API atende
+        em thread de worker, e uma conexão SQLite aberta na thread principal com
+        o padrão `check_same_thread=True` levanta erro na primeira consulta. Quem
+        serve HTTP abre a conexão do jeito que precisa e a compartilha com as
+        tools, em vez de o recuperador abrir uma segunda por baixo.
         """
         parametros = carregar_parametros(raiz / "config" / "parametros.toml")
         # Antes de qualquer carga cara: um índice gerado por outro encoder não
@@ -115,7 +127,8 @@ class Recuperador:
             adaptador = AdaptadorChroma.abrir(
                 raiz / "indices" / "chroma", colecao=parametros.colecao
             )
-        catalogo = sqlite3.connect(raiz / "data" / "catalogo.sqlite")
+        if catalogo is None:
+            catalogo = sqlite3.connect(raiz / "data" / "catalogo.sqlite")
         catalogo.row_factory = sqlite3.Row
         return cls(
             densa=BuscaDensa(adaptador, modelo=parametros.modelo_embedding),

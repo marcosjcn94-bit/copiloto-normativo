@@ -1,0 +1,80 @@
+# Ambiente de DEMO da Fase 6 — não é o ambiente de desenvolvimento.
+#
+# A regra do §3.1 do briefing é dura: nunca subir o compose inteiro no dev. A
+# máquina tem 8 GB e o copiloto carrega dois modelos ONNX (embeddings e rerank)
+# no próprio processo. Então aqui sobem só os dois serviços que a demo precisa
+# ter em container — n8n e CRM falso — e a API continua sendo processo Python no
+# host, do jeito que o dev roda.
+#
+# Sequência da demo:
+#
+#   1. docker compose -f infra/docker-compose.yml up -d
+#   2. .venv/Scripts/python.exe -m uvicorn copiloto.api.main:criar_app --factory --port 8000
+#   3. importar n8n/workflow-triagem.json em http://localhost:5678 e ativar
+#   4. curl -X POST http://localhost:5678/webhook/triagem \
+#        -H "Content-Type: application/json" \
+#        -d '{"id_cliente":"ABC-12345","pergunta":"Preciso manter política de segurança cibernética?"}'
+#      -> devolve estado "aguardando_aprovacao", o thread_id e a proposta
+#   5. curl -X POST http://localhost:5678/webhook/triagem-aprovacao \
+#        -H "Content-Type: application/json" \
+#        -d '{"thread_id":"<o da resposta>","aprovado":true,"revisor":"marcos"}'
+#      -> devolve o registro gravado, lido do próprio CRM
+#   6. docker compose -f infra/docker-compose.yml down
+#
+# A API não está aqui de propósito: o `Dockerfile` é da Fase 8, e inventá-lo
+# agora criaria arquivo de outra fase. É a Fase 8 que acrescenta o serviço.
+
+name: copiloto-normativo-demo
+
+services:
+  crm_falso:
+    image: python:3.12-slim
+    container_name: copiloto-crm-falso
+    working_dir: /app
+    # O `pip install` no boot é o preço de não ter Dockerfile ainda: são dois
+    # pacotes e o container é descartável. Quando a Fase 8 criar o Dockerfile,
+    # este bloco vira `build:`.
+    command: >
+      sh -c "pip install --quiet --no-cache-dir 'fastapi>=0.115' 'uvicorn[standard]>=0.32' &&
+             exec uvicorn crm_falso.main:criar_app --factory --host 0.0.0.0 --port 8001"
+    volumes:
+      - ../crm_falso:/app/crm_falso:ro
+    ports:
+      # Publicado porque quem escreve nele é a API, que roda no host.
+      - "8001:8001"
+    mem_limit: 256m
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: copiloto-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      # O workflow não carrega URL literal: estes dois são o único lugar onde o
+      # endereço aparece. Ver `n8n/workflow-triagem.json`.
+      COPILOTO_URL: http://host.docker.internal:8000
+      CRM_URL: http://crm_falso:8001
+      # Sem isto o `{{ $env.* }}` do workflow resolve vazio e as chamadas saem
+      # para "/perguntar" sem host.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Demo em localhost, sem TLS: o cookie seguro impediria o login.
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+    volumes:
+      - n8n_dados:/home/node/.n8n
+      # Só leitura: o workflow é versionado no repositório, e o n8n não deve
+      # sobrescrever o arquivo ao editar na interface.
+      - ../n8n:/workflows:ro
+    # `host-gateway` é o que faz o container alcançar a API no host no Linux; no
+    # Docker Desktop o nome já existe, e repetir aqui não custa nada.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: 1g
+    depends_on:
+      - crm_falso
+    restart: unless-stopped
+
+volumes:
+  n8n_dados:

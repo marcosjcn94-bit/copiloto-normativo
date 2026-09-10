@@ -42,9 +42,14 @@ exclude = [".venv", "data", "indices"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+# `crm_falso` é código deste repositório, ainda que fora do pacote `copiloto`: sem
+# isto o isort o classifica como dependência de terceiro e embaralha os blocos.
+known-first-party = ["copiloto", "crm_falso"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = "-q"
 # `rede` usa a internet e carrega o modelo ONNX; o CI da Fase 7 desmarca com -m "not rede".
 markers = [
