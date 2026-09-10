@@ -32,6 +32,12 @@ modelo_rerank    = "ms-marco-MiniLM-L-12-v2"   # ver evals/ablacao.md
 max_passos       = 8       # limite rígido contra loop infinito
 max_autocorrecao = 2       # tentativas de correção de schema antes do fallback
 
+# Tentativas de resposta antes do fallback honesto (§8). Reprovou no validador de
+# citação duas vezes, o agente responde que não encontrou base normativa em vez de
+# tentar de novo: modelo que erra a citação duas vezes não está a uma tentativa de
+# acertar. É o teto do briefing, e mexer aqui muda o comportamento sem tocar no Python.
+max_tentativas_resposta = 2
+
 [llm]
 temperatura      = 0.0     # domínio normativo não admite criatividade
 max_tokens_ctx   = 8000    # orçamento de contexto
