@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from copiloto.assinatura import NOME_DO_ARQUIVO, gravar_assinatura
 from copiloto.ingestao.chunking import ChunkFilho, ChunkPai, Norma, montar_chunks
 from copiloto.ingestao.coleta import NormaDoCorpus, caminho_do_bruto
 from copiloto.ingestao.extracao import acentuacao_intacta, extrair_blocos
@@ -156,6 +157,8 @@ def indexar(
     colecao: Any | None = None,
     embedder: Embedder | None = None,
     caminho_bm25: Path | None = None,
+    modelo_embedding: str | None = None,
+    caminho_assinatura: Path | None = None,
 ) -> RelatorioDeIndexacao:
     """Percorre o bruto coletado e alimenta catálogo, denso e esparso.
 
@@ -205,6 +208,10 @@ def indexar(
         _gravar_bm25(todos_filhos, caminho_bm25)
     if colecao is not None and embedder is not None:
         _indexar_denso(todos_filhos, colecao=colecao, embedder=embedder)
+        # Só depois de gravar vetor: a assinatura afirma quem produziu o índice
+        # denso, e sem indexação densa não há espaço vetorial a assinar.
+        if caminho_assinatura is not None and modelo_embedding is not None:
+            gravar_assinatura(caminho_assinatura, modelo=modelo_embedding)
 
     logger.info(
         "indexacao concluida",
@@ -325,6 +332,8 @@ def executar_pipeline(
             colecao=colecao,
             embedder=embedder,
             caminho_bm25=raiz / "indices" / "bm25.json",
+            modelo_embedding=parametros.modelo_embedding,
+            caminho_assinatura=raiz / "indices" / NOME_DO_ARQUIVO,
         )
     finally:
         conexao.close()

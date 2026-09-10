@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from copiloto.assinatura import NOME_DO_ARQUIVO, conferir_assinatura
 from copiloto.recuperacao.adapters.base import AdaptadorVetorial, Ocorrencia
 from copiloto.recuperacao.denso import BuscaDensa
 from copiloto.recuperacao.esparso import BuscaEsparsa
@@ -105,6 +106,9 @@ class Recuperador:
         precise de nenhuma alteração aqui — é a razão de o `Protocol` existir.
         """
         parametros = carregar_parametros(raiz / "config" / "parametros.toml")
+        # Antes de qualquer carga cara: um índice gerado por outro encoder não
+        # levanta erro sozinho, só devolve vizinho errado. Ver `assinatura.py`.
+        conferir_assinatura(raiz / "indices" / NOME_DO_ARQUIVO, modelo=parametros.modelo_embedding)
         if adaptador is None:
             from copiloto.recuperacao.adapters.chroma import AdaptadorChroma
 
