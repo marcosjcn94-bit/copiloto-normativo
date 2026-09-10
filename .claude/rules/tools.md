@@ -36,3 +36,16 @@ alucinação lá na frente.
 
 Sem efeito colateral escondido, sem estado global, sem chamada de LLM dentro de tool. Tool é
 função determinística sobre entrada validada.
+
+## Despacho e autocorreção
+
+`registro.py` é o único ponto que converte chamada crua do modelo em execução. Ele valida
+com o Pydantic da tool, executa e devolve `ResultadoDeTool` — saída tipada ou `ErroDeTool`.
+Nunca levanta exceção por culpa do modelo.
+
+O erro que volta ao modelo é JSON com campo, valor recebido e valores permitidos. Mensagem
+genérica não é erro estruturado: o modelo precisa saber **o que** corrigir, não que errou.
+
+`max_autocorrecao` vem de `[grafo]` no TOML. Falha de schema concede nova tentativa; falha
+de execução, não — argumento válido que quebrou na execução é problema do sistema, e
+reformular o argumento só queima orçamento.

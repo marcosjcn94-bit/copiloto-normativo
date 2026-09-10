@@ -41,3 +41,16 @@ faithfulness_min = 0.95
 relevancia_min   = 0.85
 erro_tool_max    = 0.02
 recall_5_min     = 0.80
+
+[tools]
+# Teto padrão de linhas do `consultar_catalogo`. O corpus tem 22 normas, então 20
+# devolve quase tudo e o `truncado` da saída avisa quando cortou.
+limite_catalogo  = 20
+
+# `buscar_normativo` filtra tema e vigência DEPOIS da recuperação (o BM25 não
+# aceita filtro e `tema` não está na metadata do chunk), então busca k * fator e
+# corta. 3 cobre o pior caso do corpus: o tema com mais normas revogadas.
+fator_sobrebusca = 3
+
+# Segundos até desistir de uma chamada ao CRM falso (Fase 6).
+timeout_crm      = 10.0

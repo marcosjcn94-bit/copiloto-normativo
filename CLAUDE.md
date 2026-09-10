@@ -38,7 +38,7 @@ Não interpreta a norma, não dá parecer jurídico, não afirma conformidade.
 
 ## Stack (fechada)
 
-Python 3.11–3.13 · LangGraph · GitHub Models (LLM primário) · Ollama `qwen2.5:3b`
+Python 3.11–3.13 · LangGraph · Groq (LLM primário) · Ollama `qwen2.5:3b`
 (portabilidade) · `fastembed` (ONNX/CPU) · `rank_bm25` · FlashRank · Chroma local
 (+ adapter Azure AI Search) · SQLite no dev / PostgreSQL no Azure · FastAPI · `httpx` ·
 Pydantic v2 · n8n self-hosted · Langfuse Cloud · pytest · ruff · Azure Container Apps ·
@@ -74,7 +74,8 @@ Executar em ordem, sem avançar sem o critério de pronto verde (`fases_de_execu
 ## Pendências a resolver antes da fase que depende delas
 
 1. Endpoint de normas do BCB — existe JSON estável? (antes da Fase 2)
-2. URL corrente do GitHub Models — o host mudou. (antes da Fase 4)
+2. ~~URL corrente do GitHub Models.~~ Resolvida na Fase 4: produto encerrado em 30/07/2026;
+   provedor primário passou a ser a Groq (`llm/groq.py`).
 3. Free tier de PostgreSQL na região Azure escolhida. (antes da Fase 8)
 4. Material público da SPREAD sobre NEXT.AI e GABBI. (antes da Fase 9)
 

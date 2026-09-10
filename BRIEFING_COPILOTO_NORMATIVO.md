@@ -90,7 +90,7 @@ Restrição inegociável: **tudo gratuito**. Máquina alvo: 8 GB de RAM, CPU sem
 |---|---|---|
 | Linguagem | Python 3.11+ | |
 | Orquestração | **LangGraph** | `StateGraph` tipado, checkpointing, `interrupt()` para HITL |
-| LLM primário | **GitHub Models** (free tier) | API compatível com OpenAI, servida por infraestrutura Azure AI. O mesmo código roda em Azure OpenAI trocando variável de ambiente |
+| LLM primário | **Groq** (free tier) | API compatível com OpenAI. O mesmo código roda em Azure OpenAI trocando variável de ambiente. Substituiu o GitHub Models, encerrado em 30/07/2026 — ver §15, item 2 |
 | LLM portabilidade | Ollama + `qwen2.5:3b` (~2 GB) | Prova o requisito "open-source via Ollama" sem estourar a RAM |
 | Embeddings | `fastembed` (ONNX, CPU, ~130 MB) | Roda em CPU e reindexar não gera fatura |
 | Busca esparsa | `rank_bm25` | Puro Python, sem serviço externo |
@@ -124,7 +124,7 @@ OpenAI e modelos open-source via Ollama":
 
 ```
 src/copiloto/llm/provedor.py     # Protocol: gerar(mensagens, tools) -> RespostaLLM
-                ├── github_models.py    # padrão, gratuito
+                ├── groq.py             # padrão, gratuito
                 ├── azure_openai.py     # mesma API, muda endpoint e header
                 └── ollama.py           # qwen2.5:3b, fallback e prova de portabilidade
 ```
@@ -146,8 +146,9 @@ Antes da Fase 2, executar nesta ordem e **reportar o resultado antes de prossegu
 1. Abrir a Busca de Normas do BCB e verificar se há endpoint JSON estável. Se houver,
    registrar a URL exata em `config/corpus.toml`. Se não houver ou for instável, baixar os
    documentos manualmente uma vez e versionar a lista, não os arquivos.
-2. Confirmar na documentação a URL corrente do endpoint do GitHub Models — **o host mudou
-   recentemente**, qualquer valor lembrado de cor está sob suspeita.
+2. ~~Confirmar a URL corrente do endpoint do GitHub Models.~~ **Resolvido na Fase 4:** o
+   GitHub Models foi encerrado por inteiro em 30/07/2026. O provedor primário passou a ser
+   a Groq (`https://api.groq.com/openai/v1`).
 3. Fixar o corpus em **20 a 40 normativos** de um tema coerente: segurança cibernética,
    computação em nuvem e continuidade de negócios. Corpus pequeno e coeso produz eval
    melhor que corpus grande e disperso.
@@ -227,7 +228,7 @@ copiloto-normativo/
 │   │   └── grafo.py                # StateGraph + checkpointer
 │   ├── llm/
 │   │   ├── provedor.py
-│   │   ├── github_models.py
+│   │   ├── groq.py
 │   │   ├── azure_openai.py
 │   │   └── ollama.py
 │   ├── resiliencia.py              # backoff, circuit breaker, idempotência
@@ -406,7 +407,7 @@ segundos:
 | RAG: context window | `config/parametros.toml`, orçamento de contexto | 3, 5 |
 | Banco vetorial (Chroma) | `recuperacao/adapters/chroma.py` | 2 |
 | Banco vetorial (Azure AI Search) | `recuperacao/adapters/azure_ai_search.py` | 3 |
-| OpenAI / Azure OpenAI | `llm/github_models.py`, `llm/azure_openai.py` | 4 |
+| OpenAI / Azure OpenAI | `llm/groq.py`, `llm/azure_openai.py` | 4 |
 | Open-source via Ollama | `llm/ollama.py` (`qwen2.5:3b`) | 4 |
 | Arquitetura de software end-to-end | adapters, camada de provedor, resiliência, evals, CI/CD | todas |
 | Governança de IA: ficha e classificação de risco | `config/governanca.yaml`, `docs/GOVERNANCA_IA.md` | 9 |
@@ -468,7 +469,7 @@ medição — e a mudança é registrada no README.
 4. Uma fase por sessão. Ao fim de cada: revisar o diff, rodar `pytest`, commitar, **fechar a
    sessão**. Sessão nova para a próxima fase — é onde está a economia de token.
 5. **Antes da Fase 2**, confirmar com o Claude o resultado das três verificações do §4.1
-   (endpoint do BCB, URL do GitHub Models, lista do corpus).
+   (endpoint do BCB, URL do provedor de LLM, lista do corpus).
 6. **Antes da Fase 8**, criar a conta Azure e configurar o alerta de orçamento.
 7. Depois da Fase 8, confirmar o custo em R$ 0 no portal e guardar o print.
 8. **Antes da Fase 9**, reler o material público da SPREAD (§15, item 4) e conferir se o
@@ -484,7 +485,12 @@ medição — e a mudança é registrada no README.
 Quatro, e nenhuma pode ser resolvida de memória:
 
 1. **Endpoint de normas do BCB** — existe JSON estável ou o corpus vai ser curado à mão?
-2. **URL corrente do GitHub Models** — o host mudou; confirmar na documentação oficial.
+2. ~~**URL corrente do GitHub Models.**~~ **Resolvida na Fase 4, em 10/09/2026.** Não era
+   mudança de host: a GitHub encerrou o produto inteiro em 30/07/2026 — playground, catálogo
+   e API de inferência. Provedor primário passou a ser a Groq, mesma API no estilo OpenAI,
+   free tier sem cartão. Trocou-se um arquivo (`llm/groq.py`); nada mais do sistema mudou,
+   porque tudo fala com o `Protocol` de `llm/provedor.py`. É a justificativa da camada de
+   provedor, agora com prova.
 3. **Free tier de PostgreSQL na região do Azure escolhida** — se não houver, cair para SQLite
    em volume e registrar a decisão.
 4. **Material público da SPREAD sobre NEXT.AI e GABBI** — reler `spread.com.br/next-ai/` na
@@ -517,7 +523,7 @@ O repositório já contém **quatro sistemas de IA distintos** sob a ótica de g
 
 | # | Sistema | Origem | Nota |
 |---|---|---|---|
-| 1 | `copiloto/github-models` | `llm/github_models.py` | Primário |
+| 1 | `copiloto/groq` | `llm/groq.py` | Primário |
 | 2 | `copiloto/azure-openai` | `llm/azure_openai.py` | Mesma API, outro fornecedor, outro custo |
 | 3 | `copiloto/ollama-qwen2.5-3b` | `llm/ollama.py` | Modelo aberto, hospedagem local, outro perfil de risco |
 | 4 | `eval-judge/camada-3` | `evals/rodar.py` (§9) | O LLM que julga o outro LLM |
