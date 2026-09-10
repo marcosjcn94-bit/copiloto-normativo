@@ -143,9 +143,9 @@ abertos da Receita Federal mudou no meio de um projeto anterior; a mesma lição
 
 Antes da Fase 2, executar nesta ordem e **reportar o resultado antes de prosseguir**:
 
-1. Abrir a Busca de Normas do BCB e verificar se há endpoint JSON estável. Se houver,
-   registrar a URL exata em `config/corpus.toml`. Se não houver ou for instável, baixar os
-   documentos manualmente uma vez e versionar a lista, não os arquivos.
+1. ~~Abrir a Busca de Normas do BCB e verificar se há endpoint JSON estável.~~
+   **Resolvido:** há, e as URLs exatas estão em `config/corpus.toml` `[fonte]` com
+   `verificado_em`. Ver §15.1 para o contrato e a pegadinha da paginação.
 2. ~~Confirmar a URL corrente do endpoint do GitHub Models.~~ **Resolvido na Fase 4:** o
    GitHub Models foi encerrado por inteiro em 30/07/2026. O provedor primário passou a ser
    a Groq (`https://api.groq.com/openai/v1`).
@@ -484,7 +484,15 @@ medição — e a mudança é registrada no README.
 
 Quatro, e nenhuma pode ser resolvida de memória:
 
-1. **Endpoint de normas do BCB** — existe JSON estável ou o corpus vai ser curado à mão?
+1. ~~**Endpoint de normas do BCB.**~~ **Resolvida na Fase 2, reverificada em 10/09/2026.**
+   Há JSON estável, e o corpus não precisou ser curado à mão:
+   `api/conteudo/app/normativos/exibenormativo?p1=<tipo>&p2=<número>` devolve `conteudo[]`
+   com `Texto`, `Revogado` e `Data` — vigência é campo da fonte, que é o que o §4.2 exige.
+   A busca (`api/search/app/normativos/buscanormativos`) serviu só à curadoria e exige
+   `querytext`, `startrow` e `rowlimit`: sem os três responde 500 em HTML latin-1. As duas
+   URLs vivem em `config/corpus.toml` `[fonte]` com a data da verificação, e os testes
+   `rede` de `tests/test_coleta.py` batem na fonte real — mudança de contrato aparece ali,
+   não num corpus meio baixado.
 2. ~~**URL corrente do GitHub Models.**~~ **Resolvida na Fase 4, em 10/09/2026.** Não era
    mudança de host: a GitHub encerrou o produto inteiro em 30/07/2026 — playground, catálogo
    e API de inferência. Provedor primário passou a ser a Groq, mesma API no estilo OpenAI,

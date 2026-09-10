@@ -17,7 +17,11 @@
 endpoint_normativo = "https://www.bcb.gov.br/api/conteudo/app/normativos/exibenormativo"
 endpoint_busca = "https://www.bcb.gov.br/api/search/app/normativos/buscanormativos"
 parametros = "p1 = tipo do normativo, p2 = número"
-verificado_em = 2026-09-09
+# `endpoint_busca` exige paginação explícita: sem `startrow` e `rowlimit` responde 500 com
+# página HTML em latin-1, que quebra no decode antes de virar erro legível. Só a curadoria
+# o usa; a coleta fala com `endpoint_normativo`. Contrato fixado em tests/test_coleta.py.
+parametros_busca = "querytext, startrow, rowlimit (os três obrigatórios)"
+verificado_em = 2026-09-10
 
 [[norma]]
 tipo = "Instrução Normativa BCB"

@@ -151,3 +151,58 @@ def test_versao_e_escolhida_pelo_ano_declarado(corpus: Corpus, tmp_path: Path) -
     )
     salvo = json.loads((tmp_path / "resolucao-cmn-4893-2021.json").read_text(encoding="utf-8"))
     assert salvo["Data"].startswith("2021")
+
+
+# --- contrato da fonte (pendência 1 do §15) ----------------------------------
+#
+# A URL do BCB não foi cravada de memória: ela está em `config/corpus.toml` e os
+# dois testes abaixo batem na fonte real para provar que o formato continua o
+# mesmo. São `rede` e ficam fora do CI — o valor deles é rodar antes de uma
+# recoleta, quando a pergunta "a fonte mudou?" precisa de resposta e não de
+# suposição. Se o BCB mudar o contrato, é aqui que aparece, e não em corpus meio
+# baixado.
+
+
+@pytest.mark.rede
+def test_endpoint_de_normativo_do_bcb_mantem_o_contrato() -> None:
+    from copiloto.ingestao.coleta import buscar_no_bcb
+
+    corpus = carregar_corpus(CORPUS_REAL)
+    alvo = next(n for n in corpus.normas if n.status_vigencia == "revogada")
+
+    conteudo = buscar_no_bcb(timeout=30.0)(
+        corpus.endpoint_normativo, {"p1": alvo.tipo, "p2": alvo.numero}
+    )
+
+    assert conteudo, "a fonte devolveu lista vazia para uma norma do corpus"
+    registro_real = conteudo[0]
+    assert {"Texto", "Revogado", "Data", "Numero", "Tipo"} <= set(registro_real)
+    assert registro_real["Revogado"] is True, "vigência é campo da fonte, não texto"
+
+
+@pytest.mark.rede
+def test_endpoint_de_busca_exige_paginacao_explicita() -> None:
+    """`startrow` e `rowlimit` não são opcionais: sem eles a fonte responde 500.
+
+    Está aqui porque é a pegadinha da curadoria — o endpoint de busca parece
+    aceitar só `querytext`, e o erro volta como página HTML em latin-1, que
+    quebra no decode antes de virar HTTP de erro legível.
+    """
+    import httpx
+
+    corpus = carregar_corpus(CORPUS_REAL)
+
+    completa = httpx.get(
+        corpus.endpoint_busca,
+        params={"querytext": "computação em nuvem", "startrow": 0, "rowlimit": 3},
+        timeout=30.0,
+    )
+    assert completa.status_code == 200
+    corpo = completa.json()
+    assert corpo["TotalRows"] > 0
+    assert {"title", "listItemId"} <= set(corpo["Rows"][0])
+
+    incompleta = httpx.get(
+        corpus.endpoint_busca, params={"querytext": "computação em nuvem"}, timeout=30.0
+    )
+    assert incompleta.status_code == 500

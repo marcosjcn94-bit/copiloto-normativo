@@ -73,7 +73,11 @@ Executar em ordem, sem avançar sem o critério de pronto verde (`fases_de_execu
 
 ## Pendências a resolver antes da fase que depende delas
 
-1. Endpoint de normas do BCB — existe JSON estável? (antes da Fase 2)
+1. ~~Endpoint de normas do BCB.~~ Resolvida na Fase 2 e reverificada em 10/09/2026: **há
+   JSON estável**. `exibenormativo` (`p1` = tipo, `p2` = número) devolve `conteudo[]` com
+   `Texto`, `Revogado` e `Data`. `buscanormativos` exige `querytext`, `startrow` e
+   `rowlimit`. As URLs vivem em `config/corpus.toml` `[fonte]`, nunca no Python, e o
+   contrato está fixado nos testes `rede` de `tests/test_coleta.py`.
 2. ~~URL corrente do GitHub Models.~~ Resolvida na Fase 4: produto encerrado em 30/07/2026;
    provedor primário passou a ser a Groq (`llm/groq.py`).
 3. Free tier de PostgreSQL na região Azure escolhida. (antes da Fase 8)
