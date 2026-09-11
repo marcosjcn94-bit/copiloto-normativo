@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Consulta e aprovação — sequência",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1250,
+      800
+    ],
+    "views": [
+      {
+        "id": "consulta",
+        "label": "Consulta até o interrupt()",
+        "focus": [
+          "n8n",
+          "api",
+          "grafo",
+          "groq",
+          "recuperador",
+          "checkpoint"
+        ],
+        "note": "A primeira requisição termina com o grafo parado à espera de humano."
+      },
+      {
+        "id": "retomada",
+        "label": "Retomada e escrita",
+        "focus": [
+          "n8n",
+          "api",
+          "checkpoint",
+          "grafo",
+          "crm"
+        ],
+        "note": "A segunda requisição retoma do checkpoint e grava no CRM."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "n8n",
+      "type": "external",
+      "label": "n8n"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API FastAPI"
+    },
+    {
+      "id": "grafo",
+      "type": "backend",
+      "label": "Grafo LangGraph"
+    },
+    {
+      "id": "groq",
+      "type": "cloud",
+      "label": "Groq LLM"
+    },
+    {
+      "id": "recuperador",
+      "type": "backend",
+      "label": "Recuperador"
+    },
+    {
+      "id": "checkpoint",
+      "type": "database",
+      "label": "Checkpoint SQLite"
+    },
+    {
+      "id": "crm",
+      "type": "external",
+      "label": "CRM"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 485,
+      "label": "POST /perguntar"
+    },
+    {
+      "from": 490,
+      "to": 730,
+      "label": "POST /aprovar"
+    }
+  ],
+  "messages": [
+    {
+      "from": "n8n",
+      "to": "api",
+      "y": 180,
+      "label": "POST /perguntar",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "grafo",
+      "y": 212,
+      "label": "invoke(thread_id)",
+      "variant": "emphasis",
+      "note": "sanear mascara PII antes de qualquer chamada paga"
+    },
+    {
+      "from": "grafo",
+      "to": "groq",
+      "y": 244,
+      "label": "deliberar: chat + tools",
+      "variant": "default"
+    },
+    {
+      "from": "groq",
+      "to": "grafo",
+      "y": 276,
+      "label": "tool_call buscar_normativo",
+      "variant": "return"
+    },
+    {
+      "from": "grafo",
+      "to": "recuperador",
+      "y": 308,
+      "label": "buscar(hibrido_rerank)",
+      "variant": "emphasis"
+    },
+    {
+      "from": "recuperador",
+      "to": "grafo",
+      "y": 340,
+      "label": "trechos citáveis",
+      "variant": "return"
+    },
+    {
+      "from": "grafo",
+      "to": "groq",
+      "y": 372,
+      "label": "nova volta",
+      "variant": "default"
+    },
+    {
+      "from": "groq",
+      "to": "grafo",
+      "y": 404,
+      "label": "propõe registrar_crm",
+      "variant": "return"
+    },
+    {
+      "from": "grafo",
+      "to": "checkpoint",
+      "y": 436,
+      "label": "interrupt() persiste",
+      "variant": "security"
+    },
+    {
+      "from": "api",
+      "to": "n8n",
+      "y": 468,
+      "label": "200 aguardando_aprovacao",
+      "variant": "return"
+    },
+    {
+      "from": "n8n",
+      "to": "api",
+      "y": 505,
+      "label": "POST /aprovar + revisor",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "checkpoint",
+      "y": 537,
+      "label": "interrupt pendente?",
+      "variant": "default",
+      "note": "404 sem checkpoint · 409 sem aprovação pendente"
+    },
+    {
+      "from": "api",
+      "to": "grafo",
+      "y": 569,
+      "label": "Command(resume)",
+      "variant": "emphasis"
+    },
+    {
+      "from": "grafo",
+      "to": "crm",
+      "y": 601,
+      "label": "POST /registros",
+      "variant": "security",
+      "note": "retentativa + disjuntor; Idempotency-Key no header"
+    },
+    {
+      "from": "crm",
+      "to": "grafo",
+      "y": 633,
+      "label": "201 · 409 duplicado",
+      "variant": "return"
+    },
+    {
+      "from": "grafo",
+      "to": "api",
+      "y": 665,
+      "label": "verificar: citação ok",
+      "variant": "return"
+    },
+    {
+      "from": "api",
+      "to": "n8n",
+      "y": 697,
+      "label": "200 respondida + registro",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "api",
+      "from": 174,
+      "to": 476
+    },
+    {
+      "participant": "grafo",
+      "from": 206,
+      "to": 444
+    },
+    {
+      "participant": "recuperador",
+      "from": 302,
+      "to": 348
+    },
+    {
+      "participant": "api",
+      "from": 499,
+      "to": 705
+    },
+    {
+      "participant": "grafo",
+      "from": 563,
+      "to": 673
+    },
+    {
+      "participant": "crm",
+      "from": 595,
+      "to": 641
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Pausa real, falha tipada",
+      "items": [
+        "200 com estado aguardando_aprovacao: o grafo está parado, não processando",
+        "Groq fora do ar vira 503; falha do CRM volta ao modelo como não gravado"
+      ]
+    }
+  ]
+}

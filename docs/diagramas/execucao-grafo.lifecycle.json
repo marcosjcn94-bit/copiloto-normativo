@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Ciclo de vida de uma execução do grafo",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "principal",
+        "label": "Caminho principal",
+        "focus": [
+          "recebida",
+          "sanear",
+          "deliberar",
+          "verificar",
+          "respondida"
+        ],
+        "note": "Da pergunta recebida à resposta com citação verificada."
+      },
+      {
+        "id": "hitl",
+        "label": "Espera humana",
+        "focus": [
+          "deliberar",
+          "aprovacao"
+        ],
+        "note": "interrupt() pausa sem encerrar; a retomada volta ao agente."
+      },
+      {
+        "id": "saidas",
+        "label": "Retentativa e saídas",
+        "focus": [
+          "verificar",
+          "deliberar",
+          "bloqueada",
+          "semBase"
+        ],
+        "note": "Citação órfã volta ao agente enquanto houver tentativa; depois, encerra sem base."
+      }
+    ],
+    "viewBox": [
+      1070,
+      630
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Fases"
+    },
+    {
+      "id": "espera",
+      "label": "Espera humana"
+    },
+    {
+      "id": "terminal",
+      "label": "Encerramentos"
+    }
+  ],
+  "states": [
+    {
+      "id": "recebida",
+      "type": "start",
+      "label": "Recebida",
+      "sublabel": "POST /perguntar",
+      "lane": "main",
+      "col": 0,
+      "step": "01"
+    },
+    {
+      "id": "sanear",
+      "type": "decision",
+      "label": "Sanear",
+      "sublabel": "guardrail de entrada",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "PII"
+    },
+    {
+      "id": "deliberar",
+      "type": "active",
+      "label": "Deliberar",
+      "sublabel": "LLM + tools",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "max_passos"
+    },
+    {
+      "id": "verificar",
+      "type": "decision",
+      "label": "Verificar",
+      "sublabel": "validador de citação",
+      "lane": "main",
+      "col": 3,
+      "step": "04"
+    },
+    {
+      "id": "respondida",
+      "type": "success",
+      "label": "Respondida",
+      "sublabel": "citações conferidas",
+      "lane": "main",
+      "col": 4,
+      "step": "05"
+    },
+    {
+      "id": "aprovacao",
+      "type": "waiting",
+      "label": "Aprovação pendente",
+      "sublabel": "interrupt()",
+      "lane": "espera",
+      "col": 0,
+      "tag": "checkpoint",
+      "width": 150
+    },
+    {
+      "id": "bloqueada",
+      "type": "failure",
+      "label": "Bloqueada",
+      "sublabel": "injeção na entrada",
+      "lane": "terminal",
+      "col": 0,
+      "tag": "terminal"
+    },
+    {
+      "id": "semBase",
+      "type": "failure",
+      "label": "Sem base normativa",
+      "sublabel": "tentativas esgotadas",
+      "lane": "terminal",
+      "col": 1,
+      "tag": "terminal",
+      "width": 150
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-recebida-sanear",
+      "from": "recebida",
+      "to": "sanear"
+    },
+    {
+      "id": "t-sanear-deliberar",
+      "from": "sanear",
+      "to": "deliberar",
+      "label": "limpa",
+      "labelDy": -40
+    },
+    {
+      "id": "t-deliberar-verificar",
+      "from": "deliberar",
+      "to": "verificar",
+      "label": "respondeu",
+      "labelDy": 50
+    },
+    {
+      "id": "t-verificar-respondida",
+      "from": "verificar",
+      "to": "respondida",
+      "label": "aprovada",
+      "labelDy": -40
+    },
+    {
+      "id": "t-deliberar-aprovacao",
+      "from": "deliberar",
+      "to": "aprovacao",
+      "label": "propõe escrita",
+      "variant": "security",
+      "labelDx": -64,
+      "labelDy": 40
+    },
+    {
+      "id": "t-aprovacao-deliberar",
+      "from": "aprovacao",
+      "to": "deliberar",
+      "label": "retoma",
+      "variant": "emphasis",
+      "labelDx": 42
+    },
+    {
+      "id": "t-sanear-bloqueada",
+      "from": "sanear",
+      "to": "bloqueada",
+      "label": "bloqueada",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          248,
+          479
+        ]
+      ],
+      "labelAt": [
+        248,
+        330
+      ]
+    },
+    {
+      "id": "t-verificar-retenta",
+      "from": "verificar",
+      "to": "deliberar",
+      "label": "reprovada · retenta",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "top-channel"
+    },
+    {
+      "id": "t-verificar-semBase",
+      "from": "verificar",
+      "to": "semBase",
+      "label": "esgotou",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        556,
+        320
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Nó não chama nó",
+      "items": [
+        "Cada nó grava no estado; a aresta condicional decide",
+        "Reprovação no validador reescreve até max_tentativas_resposta"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Saídas explícitas",
+      "items": [
+        "Deliberar também encerra sem base em limite_de_passos ou falha_de_tool",
+        "Dizer que não há base é resposta, não erro"
+      ]
+    }
+  ]
+}

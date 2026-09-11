@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Copiloto Normativo BCB — Arquitetura de runtime",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "caminho-consulta",
+        "label": "Caminho da consulta",
+        "focus": [
+          "n8n",
+          "api",
+          "grafo",
+          "recuperador",
+          "chroma"
+        ],
+        "note": "Da triagem no n8n até os trechos recuperados no índice denso."
+      },
+      {
+        "id": "hitl-escrita",
+        "label": "HITL e escrita externa",
+        "focus": [
+          "revisor",
+          "n8n",
+          "grafo",
+          "checkpoint",
+          "crm"
+        ],
+        "note": "O grafo para no interrupt(); só a aprovação humana alcança o CRM."
+      },
+      {
+        "id": "externos",
+        "label": "Serviços externos",
+        "focus": [
+          "groq",
+          "langfuse",
+          "crm"
+        ],
+        "note": "LLM, observabilidade e CRM ficam fora da réplica do Container Apps."
+      }
+    ],
+    "viewBox": [
+      1180,
+      690
+    ]
+  },
+  "components": [
+    {
+      "id": "revisor",
+      "type": "external",
+      "label": "Revisor humano",
+      "sublabel": "aprova ou recusa",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "n8n",
+      "type": "external",
+      "label": "n8n",
+      "sublabel": "workflow de triagem",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "webhook"
+    },
+    {
+      "id": "langfuse",
+      "type": "cloud",
+      "label": "Langfuse Cloud",
+      "sublabel": "traces opcionais",
+      "pos": [
+        270,
+        100
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API FastAPI",
+      "sublabel": "/perguntar · /aprovar",
+      "pos": [
+        270,
+        270
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "/saude · /governanca"
+    },
+    {
+      "id": "groq",
+      "type": "cloud",
+      "label": "Groq",
+      "sublabel": "LLM primário",
+      "pos": [
+        500,
+        100
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "grafo",
+      "type": "backend",
+      "label": "Grafo LangGraph",
+      "sublabel": "sanear · deliberar · verificar",
+      "pos": [
+        500,
+        270
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "HITL"
+    },
+    {
+      "id": "recuperador",
+      "type": "backend",
+      "label": "Recuperador híbrido",
+      "sublabel": "denso + BM25 → RRF → rerank",
+      "pos": [
+        730,
+        270
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "ONNX CPU"
+    },
+    {
+      "id": "chroma",
+      "type": "database",
+      "label": "Chroma",
+      "sublabel": "índice denso local",
+      "pos": [
+        960,
+        270
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "checkpoint",
+      "type": "database",
+      "label": "Checkpoint SQLite",
+      "sublabel": "Azure Files (SMB)",
+      "pos": [
+        270,
+        420
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "nolock"
+    },
+    {
+      "id": "catalogo",
+      "type": "database",
+      "label": "Catálogo SQLite",
+      "sublabel": "normas + artigos",
+      "pos": [
+        730,
+        420
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "vigência"
+    },
+    {
+      "id": "crm",
+      "type": "external",
+      "label": "CRM",
+      "sublabel": "POST /registros",
+      "pos": [
+        500,
+        590
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Idempotency-Key"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Azure Container Apps · maxReplicas 1",
+      "wraps": [
+        "api",
+        "grafo",
+        "recuperador",
+        "chroma",
+        "checkpoint",
+        "catalogo"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "revisor-decide",
+      "from": "revisor",
+      "to": "n8n",
+      "label": "decisão",
+      "labelAt": [
+        115,
+        217
+      ]
+    },
+    {
+      "id": "n8n-api",
+      "from": "n8n",
+      "to": "api",
+      "label": "HTTP JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-grafo",
+      "from": "api",
+      "to": "grafo",
+      "label": "invoke",
+      "variant": "emphasis"
+    },
+    {
+      "id": "grafo-recuperador",
+      "from": "grafo",
+      "to": "recuperador",
+      "label": "busca",
+      "variant": "emphasis"
+    },
+    {
+      "id": "recuperador-chroma",
+      "from": "recuperador",
+      "to": "chroma",
+      "label": "top-k"
+    },
+    {
+      "id": "recuperador-catalogo",
+      "from": "recuperador",
+      "to": "catalogo",
+      "label": "artigo pai",
+      "labelAt": [
+        805,
+        377
+      ]
+    },
+    {
+      "id": "grafo-groq",
+      "from": "grafo",
+      "to": "groq",
+      "label": "chat + tools"
+    },
+    {
+      "id": "api-langfuse",
+      "from": "api",
+      "to": "langfuse",
+      "label": "spans",
+      "variant": "dashed",
+      "labelAt": [
+        345,
+        217
+      ]
+    },
+    {
+      "id": "grafo-checkpoint",
+      "from": "grafo",
+      "to": "checkpoint",
+      "label": "estado"
+    },
+    {
+      "id": "grafo-crm",
+      "from": "grafo",
+      "to": "crm",
+      "label": "pós-aprovação",
+      "variant": "security",
+      "labelAt": [
+        575,
+        548
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Autonomia nível 2",
+      "items": [
+        "Única escrita externa: nó escrever, após aprovação",
+        "Idempotency-Key evita registro duplicado"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Implantação",
+      "items": [
+        "Imagem GHCR com índices embutidos",
+        "Checkpoint em Azure Files; réplica única"
+      ]
+    }
+  ]
+}

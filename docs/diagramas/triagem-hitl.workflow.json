@@ -1,0 +1,262 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Triagem normativa com aprovação humana",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "consulta",
+        "label": "Consulta",
+        "focus": [
+          "triagem",
+          "monta",
+          "perguntar",
+          "gate",
+          "resposta"
+        ],
+        "note": "Triagem sem escrita: o copiloto responde e o n8n devolve."
+      },
+      {
+        "id": "aprovacao",
+        "label": "Aprovação e escrita",
+        "focus": [
+          "gate",
+          "proposta",
+          "aprovar",
+          "registro",
+          "confere",
+          "recusado"
+        ],
+        "note": "A proposta vai ao humano; só o aprovado chega ao CRM."
+      }
+    ],
+    "viewBox": [
+      1130,
+      652
+    ]
+  },
+  "lanes": [
+    {
+      "id": "n8n",
+      "label": "n8n"
+    },
+    {
+      "id": "revisor",
+      "label": "Revisor humano"
+    },
+    {
+      "id": "copiloto",
+      "label": "Copiloto"
+    },
+    {
+      "id": "crm",
+      "label": "CRM"
+    }
+  ],
+  "phases": [
+    {
+      "id": "entrada",
+      "label": "Entrada",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "consulta",
+      "label": "Consulta",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "escrita",
+      "label": "Decisão + escrita",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "triagem",
+    "monta",
+    "perguntar",
+    "gate",
+    "proposta",
+    "aprovar",
+    "registro",
+    "confere"
+  ],
+  "nodes": [
+    {
+      "id": "triagem",
+      "lane": "n8n",
+      "col": 0,
+      "type": "external",
+      "label": "Recebe a triagem",
+      "sublabel": "webhook",
+      "width": 162
+    },
+    {
+      "id": "monta",
+      "lane": "n8n",
+      "col": 1,
+      "type": "frontend",
+      "label": "Monta a pergunta",
+      "sublabel": "set",
+      "width": 162
+    },
+    {
+      "id": "perguntar",
+      "lane": "copiloto",
+      "col": 2,
+      "type": "backend",
+      "label": "POST /perguntar",
+      "sublabel": "grafo até interrupt()",
+      "width": 162
+    },
+    {
+      "id": "gate",
+      "lane": "n8n",
+      "col": 3,
+      "type": "security",
+      "label": "Precisa aprovar?",
+      "sublabel": "lê estado",
+      "width": 162
+    },
+    {
+      "id": "resposta",
+      "lane": "n8n",
+      "col": 4,
+      "type": "frontend",
+      "label": "Devolve a resposta",
+      "sublabel": "com citações",
+      "width": 162
+    },
+    {
+      "id": "proposta",
+      "lane": "revisor",
+      "col": 3,
+      "type": "external",
+      "label": "Revisa a proposta",
+      "sublabel": "revisor obrigatório",
+      "width": 162
+    },
+    {
+      "id": "aprovar",
+      "lane": "copiloto",
+      "col": 4,
+      "type": "backend",
+      "label": "POST /aprovar",
+      "sublabel": "Command(resume)",
+      "width": 162
+    },
+    {
+      "id": "recusado",
+      "lane": "copiloto",
+      "col": 5,
+      "type": "security",
+      "label": "Recusado",
+      "sublabel": "nada gravado",
+      "width": 162
+    },
+    {
+      "id": "registro",
+      "lane": "crm",
+      "col": 5,
+      "type": "database",
+      "label": "POST /registros",
+      "sublabel": "Idempotency-Key",
+      "width": 162
+    },
+    {
+      "id": "confere",
+      "lane": "n8n",
+      "col": 5,
+      "type": "frontend",
+      "label": "Confere o registro",
+      "sublabel": "GET /registros",
+      "width": 162
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-triagem-monta",
+      "from": "triagem",
+      "to": "monta"
+    },
+    {
+      "id": "e-monta-perguntar",
+      "from": "monta",
+      "to": "perguntar",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-perguntar-gate",
+      "from": "perguntar",
+      "to": "gate",
+      "label": "estado"
+    },
+    {
+      "id": "e-gate-resposta",
+      "from": "gate",
+      "to": "resposta",
+      "label": "respondida",
+      "role": "branch"
+    },
+    {
+      "id": "e-gate-proposta",
+      "from": "gate",
+      "to": "proposta",
+      "label": "aguardando",
+      "variant": "security"
+    },
+    {
+      "id": "e-proposta-aprovar",
+      "from": "proposta",
+      "to": "aprovar",
+      "label": "decisão",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-aprovar-registro",
+      "from": "aprovar",
+      "to": "registro",
+      "label": "aprovado",
+      "variant": "security"
+    },
+    {
+      "id": "e-aprovar-recusado",
+      "from": "aprovar",
+      "to": "recusado",
+      "label": "recusado",
+      "role": "error"
+    },
+    {
+      "id": "e-registro-confere",
+      "from": "registro",
+      "to": "confere",
+      "role": "return",
+      "fromSide": "right",
+      "toSide": "right",
+      "route": "outside-right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Duas requisições, uma conversa",
+      "items": [
+        "/perguntar e /aprovar compartilham o thread_id",
+        "Entre elas o estado dorme no checkpoint SQLite"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Escrita só com humano",
+      "items": [
+        "Aprovação anônima é recusada pela API",
+        "201 grava; 409 é reenvio reconhecido, não falha"
+      ]
+    }
+  ]
+}

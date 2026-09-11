@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Fluxo de dados normativos",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      640
+    ],
+    "views": [
+      {
+        "id": "ingestao",
+        "label": "Ingestão (build)",
+        "focus": [
+          "bcb",
+          "coleta",
+          "indices",
+          "catalogo"
+        ],
+        "note": "Roda no build da imagem: normas do BCB viram índices e catálogo."
+      },
+      {
+        "id": "consulta",
+        "label": "Consulta (runtime)",
+        "focus": [
+          "pergunta",
+          "sanear",
+          "recuperador",
+          "groq",
+          "verificar"
+        ],
+        "note": "Pergunta mascarada, trechos recuperados, resposta conferida."
+      },
+      {
+        "id": "pii",
+        "label": "PII e trace",
+        "focus": [
+          "pergunta",
+          "sanear",
+          "langfuse"
+        ],
+        "note": "O trace recebe só o texto saneado e contagens, nunca trecho de norma."
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "Fontes"
+    },
+    {
+      "label": "Tratamento"
+    },
+    {
+      "label": "Índices"
+    },
+    {
+      "label": "Recuperação"
+    },
+    {
+      "label": "Consumo"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "bcb",
+      "type": "external",
+      "label": "Normas BCB",
+      "sublabel": "exibenormativo",
+      "stage": 0,
+      "row": 0,
+      "tag": "JSON"
+    },
+    {
+      "id": "pergunta",
+      "type": "external",
+      "label": "Pergunta",
+      "sublabel": "via n8n",
+      "stage": 0,
+      "row": 2,
+      "tag": "pode ter CPF"
+    },
+    {
+      "id": "coleta",
+      "type": "backend",
+      "label": "Coleta + chunking",
+      "sublabel": "artigo pai / filho",
+      "stage": 1,
+      "row": 0,
+      "tag": "build",
+      "width": 140
+    },
+    {
+      "id": "sanear",
+      "type": "security",
+      "label": "Sanear",
+      "sublabel": "guardrail de entrada",
+      "stage": 1,
+      "row": 2,
+      "tag": "PII"
+    },
+    {
+      "id": "indices",
+      "type": "database",
+      "label": "Chroma + BM25",
+      "sublabel": "denso e esparso",
+      "stage": 2,
+      "row": 0,
+      "tag": "fastembed",
+      "width": 128
+    },
+    {
+      "id": "catalogo",
+      "type": "database",
+      "label": "Catálogo SQL",
+      "sublabel": "normas + artigos",
+      "stage": 2,
+      "row": 1,
+      "tag": "vigência"
+    },
+    {
+      "id": "recuperador",
+      "type": "backend",
+      "label": "RRF + rerank",
+      "sublabel": "FlashRank",
+      "stage": 3,
+      "row": 1,
+      "tag": "k_final"
+    },
+    {
+      "id": "groq",
+      "type": "cloud",
+      "label": "Groq",
+      "sublabel": "redige com citação",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "verificar",
+      "type": "security",
+      "label": "Verificar",
+      "sublabel": "validador de citação",
+      "stage": 4,
+      "row": 2,
+      "tag": "código"
+    },
+    {
+      "id": "langfuse",
+      "type": "cloud",
+      "label": "Langfuse",
+      "sublabel": "trace opcional",
+      "stage": 4,
+      "row": 3
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-bcb-coleta",
+      "from": "bcb",
+      "to": "coleta",
+      "label": "texto + revogado",
+      "classification": "público",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-coleta-indices",
+      "from": "coleta",
+      "to": "indices",
+      "label": "chunks filhos",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-coleta-catalogo",
+      "from": "coleta",
+      "to": "catalogo",
+      "label": "artigos pai",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          315,
+          271
+        ]
+      ]
+    },
+    {
+      "id": "f-pergunta-sanear",
+      "from": "pergunta",
+      "to": "sanear",
+      "label": "texto bruto",
+      "classification": "PII",
+      "variant": "security"
+    },
+    {
+      "id": "f-sanear-recuperador",
+      "from": "sanear",
+      "to": "recuperador",
+      "label": "pergunta mascarada",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          745,
+          385
+        ]
+      ]
+    },
+    {
+      "id": "f-indices-recuperador",
+      "from": "indices",
+      "to": "recuperador",
+      "label": "top-k",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          745,
+          157
+        ]
+      ]
+    },
+    {
+      "id": "f-catalogo-recuperador",
+      "from": "catalogo",
+      "to": "recuperador",
+      "label": "artigo inteiro"
+    },
+    {
+      "id": "f-recuperador-groq",
+      "from": "recuperador",
+      "to": "groq",
+      "label": "trechos",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-recuperador-verificar",
+      "from": "recuperador",
+      "to": "verificar",
+      "label": "ids citáveis",
+      "variant": "security"
+    },
+    {
+      "id": "f-groq-verificar",
+      "from": "groq",
+      "to": "verificar",
+      "label": "resposta",
+      "labelAt": [
+        960,
+        271
+      ]
+    },
+    {
+      "id": "f-sanear-langfuse",
+      "from": "sanear",
+      "to": "langfuse",
+      "label": "resumo sem norma",
+      "classification": "sem PII",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          315,
+          499
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Vetoriza o parágrafo, entrega o artigo",
+      "items": [
+        "Busca no chunk filho, citação no artigo pai",
+        "Artigo longo é cortado e o corte é anunciado"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fronteira de PII",
+      "items": [
+        "CPF mascarado antes de LLM, índice ou trace",
+        "Trace carrega contagens e IDs, não texto de norma"
+      ]
+    }
+  ]
+}
