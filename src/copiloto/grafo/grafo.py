@@ -195,9 +195,18 @@ def checkpointer_sqlite(caminho: Path) -> tuple[SqliteSaver, sqlite3.Connection]
     o mesmo checkpointer serve as duas. A conexão volta junto de propósito: um
     checkpointer que fecha a própria conexão no `__del__` vira bug de ordem de
     coleta, e um que nunca fecha vira arquivo travado no Windows.
+
+    `nolock=1` na URI porque o Azure Files monta como SMB, e o lock de arquivo
+    do SQLite (fcntl por baixo) não é confiável nesse protocolo — o primeiro
+    `setup()` já falhava com `database is locked` sem nenhum segundo processo
+    disputando o arquivo. É seguro pular o lock porque a invariante já existe
+    por outro caminho: `maxReplicas: 1` no Bicep garante um único processo
+    tocando este arquivo. Em disco local (dev) o parâmetro é inofensivo.
     """
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    conexao = sqlite3.connect(str(caminho), check_same_thread=False)
+    conexao = sqlite3.connect(
+        f"file:{caminho}?nolock=1", uri=True, check_same_thread=False
+    )
     checkpointer = SqliteSaver(conexao)
     checkpointer.setup()
     return checkpointer, conexao
