@@ -155,7 +155,10 @@ resource ambiente 'Microsoft.App/managedEnvironments@2024-03-01' = {
           // Sem workspace o log ainda existe: sai no stdout do container e é
           // legível por `az containerapp logs show --follow`. O que se perde é a
           // retenção e a consulta por KQL, não a visibilidade.
-          destination: 'none'
+          //
+          // `destination` fica de fora de propósito: a API rejeita a string
+          // literal 'none' (`AppLogsConfiguration.Destination is invalid`) —
+          // omitir a propriedade é o que produz esse mesmo comportamento.
         }
   }
 }
