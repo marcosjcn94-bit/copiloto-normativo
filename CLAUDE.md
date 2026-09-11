@@ -89,7 +89,12 @@ Executar em ordem, sem avançar sem o critério de pronto verde (`fases_de_execu
    contrato está fixado nos testes `rede` de `tests/test_coleta.py`.
 2. ~~URL corrente do GitHub Models.~~ Resolvida na Fase 4: produto encerrado em 30/07/2026;
    provedor primário passou a ser a Groq (`llm/groq.py`).
-3. Free tier de PostgreSQL na região Azure escolhida. (antes da Fase 8)
+3. ~~Free tier de PostgreSQL na região Azure escolhida.~~ Resolvida na Fase 8 em
+   11/09/2026: a Microsoft **não publica** as regiões do trial (o gate é no portal, na
+   criação) e o benefício dura 12 meses, contra a franquia permanente do Container Apps.
+   Acionado o fallback do §10.2: SQLite em Azure Files, `maxReplicas: 1` por causa do
+   lock sobre SMB. Junto caiu o ACR, que não tem free tier — a imagem vai para o GHCR.
+   As duas trocas estão no README e em `infra/main.bicep`.
 4. Material público da SPREAD sobre NEXT.AI e GABBI. (antes da Fase 9)
 
 Nenhuma pode ser resolvida de memória. Verificar e reportar antes de prosseguir.

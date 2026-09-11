@@ -1,0 +1,38 @@
+# Contexto de build do `infra/Dockerfile`. A raiz do repositório é o contexto, e
+# sem este arquivo ela carrega 225 MB de índice e a .venv do Windows para dentro
+# do daemon a cada build.
+#
+# `/data` e `/indices` saem de propósito: a imagem os RECONSTRÓI (ver o estágio
+# `corpus` do Dockerfile). Copiá-los do host faria a imagem depender de qual
+# máquina rodou o build — e do Windows, onde o cache do FlashRank tem três
+# modelos porque a ablação da Fase 3 experimentou três.
+.venv/
+data/
+indices/
+
+.git/
+.github/
+.claude/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+.env
+.env.local
+*.sqlite
+*.sqlite3
+
+tests/
+evals/
+n8n/
+docs/
+*.md
+
+projeto-spread-architecture.html
+governanca-out/
+painel.html
+inventario.json

@@ -499,8 +499,17 @@ Quatro, e nenhuma pode ser resolvida de memória:
    free tier sem cartão. Trocou-se um arquivo (`llm/groq.py`); nada mais do sistema mudou,
    porque tudo fala com o `Protocol` de `llm/provedor.py`. É a justificativa da camada de
    provedor, agora com prova.
-3. **Free tier de PostgreSQL na região do Azure escolhida** — se não houver, cair para SQLite
-   em volume e registrar a decisão.
+3. ~~**Free tier de PostgreSQL na região do Azure escolhida.**~~ **Resolvida na Fase 8, em
+   11/09/2026 — o fallback foi acionado.** Três razões somadas: a Microsoft não publica em
+   quais regiões o trial está habilitado (o gate é no portal, na criação, e não há como
+   confirmar sem subscription ativa); são 12 meses, contra a franquia permanente do
+   Container Apps, então a promessa de R$ 0 quebraria no mês 13; e o checkpointer é
+   `SqliteSaver`, de modo que trocar exigiria `langgraph-checkpoint-postgres`, fora da lista
+   fechada do §3. SQLite em Azure Files montado em `/mnt/estado` — e é essa escolha que fixa
+   `maxReplicas: 1`, porque SQLite sobre SMB não tem lock confiável entre máquinas.
+   **O §10.2 perdeu também o ACR**, por motivo independente: ele não tem free tier de espécie
+   alguma e o Basic é cobrado por dia, o que contradiz o critério de pronto da própria fase.
+   A imagem vai para o GitHub Container Registry, gratuito para pacote público.
 4. **Material público da SPREAD sobre NEXT.AI e GABBI** — reler `spread.com.br/next-ai/` na
    data de execução da Fase 9 e conferir se os cinco pilares e as capacidades citadas no §16
    continuam descritos assim. Se o vocabulário mudou, atualizar o `docs/GABBI_READY.md`; o
