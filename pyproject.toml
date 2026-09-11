@@ -35,8 +35,13 @@ dev = [
 # pode depender de pacote que só serve para falar com um serviço externo.
 # `observabilidade/tracing.py` degrada para no-op quando o pacote não está
 # instalado — o copiloto responde igual, só não emite trace.
+# `tracing.py` já fala a API nativa do SDK v4 (`start_as_current_observation`,
+# `propagate_attributes`, `as_type`); `>=3.0` deixava pip instalar um v3 sem
+# esses nomes, que quebraria em runtime com `AttributeError`. Langfuse Cloud
+# vira v4-only em 16/11/2026 (§15), e só o v4 ≥ 4.7 entrega trace em tempo real
+# nele — abaixo disso, ingestão em lote com até 15 min de atraso.
 obs = [
-    "langfuse>=3.0",
+    "langfuse>=4.7",
 ]
 
 [build-system]

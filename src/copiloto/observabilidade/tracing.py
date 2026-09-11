@@ -368,13 +368,15 @@ def abrir_rastreador(
 
     # `LANGFUSE_HOST` é o nome que o `.env` do projeto usa desde a Fase 0 e o que
     # o SDK v3 lia; o v4 passou a chamá-lo `LANGFUSE_BASE_URL`. Aceitar os dois
-    # evita que uma renomeação no SDK apague silenciosamente o destino.
+    # evita que uma renomeação no SDK apague silenciosamente o destino. No
+    # construtor, é `base_url=` que recebe o valor: `host=` continua aceito no
+    # v4, mas está marcado `deprecated` no SDK a favor de `base_url`.
     base = amb.get("LANGFUSE_HOST", "").strip() or amb.get("LANGFUSE_BASE_URL", "").strip()
     try:
         cliente = Langfuse(
             public_key=publica,
             secret_key=secreta,
-            host=base or None,
+            base_url=base or None,
             environment=amb.get("LANGFUSE_ENVIRONMENT", "").strip() or None,
             release=release or None,
             timeout=int(amb.get("LANGFUSE_TIMEOUT", "10") or 10),
