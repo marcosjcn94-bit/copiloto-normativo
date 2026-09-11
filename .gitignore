@@ -24,6 +24,9 @@ dist/
 painel.html
 inventario.json
 
+# Diagrama de arquitetura gerado localmente
+projeto-spread-architecture.html
+
 # Sistema operacional / editor
 .DS_Store
 Thumbs.db
