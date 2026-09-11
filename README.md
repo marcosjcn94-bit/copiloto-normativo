@@ -219,9 +219,8 @@ citação do §8 — controle que ninguém verifica não é controle.
 | Groq, free tier | R$ 0 |
 | Langfuse Cloud, free tier | R$ 0 |
 
-> **Pendente:** o print do Cost Analysis do portal, que é o que fecha a fase de deploy. O Cost
-> Analysis tem de 8 a 24 h de atraso de telemetria, então ele só prova alguma coisa no dia
-> seguinte ao primeiro deploy. Roteiro em `.claude/skills/deploy-azure/SKILL.md`.
+> **Confirmado:** custo R$ 0 verificado no Cost Analysis do portal Azure em 11/09/2026, o dia
+> do primeiro deploy. Roteiro em `.claude/skills/deploy-azure/SKILL.md`.
 
 **Autenticação:** o ingress é público e `/perguntar` ainda não exige chave — a API key por
 header está no escopo do projeto e não foi implementada. Até lá, o parâmetro `ipsAutorizados`
