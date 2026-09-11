@@ -43,6 +43,23 @@ class PerguntaDeGabarito:
     esperado: frozenset[tuple[str, int]] = frozenset()
 
 
+RAIZ = Path(__file__).resolve().parents[1]
+
+
+def caminho_legivel(caminho: Path) -> str:
+    """Caminho relativo à raiz quando dá, absoluto quando não dá.
+
+    `Path.relative_to` levanta para caminho de fora da árvore, e este `print` é a
+    última linha do script: uma execução de vinte minutos chegava ao fim, gravava
+    tudo e morria ao anunciar onde gravou. Erro de apresentação não pode derrubar
+    trabalho já concluído.
+    """
+    try:
+        return str(caminho.relative_to(RAIZ))
+    except ValueError:
+        return str(caminho)
+
+
 def carregar_golden(
     caminho: Path, *, tipo: TipoDePergunta | None = None
 ) -> list[PerguntaDeGabarito]:

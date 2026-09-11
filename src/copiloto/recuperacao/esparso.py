@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Container
 from pathlib import Path
 from typing import Any
 
+from copiloto.ingestao.chunking import id_norma_do_chunk
 from copiloto.ingestao.indexacao import tokenizar
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,7 @@ class BuscaEsparsa:
         self._ids = ids
         self._indice: Any | None = None
         self._tokens = tokens
+        self._por_norma: dict[str, frozenset[str]] | None = None
 
     @classmethod
     def carregar(cls, caminho: Path) -> BuscaEsparsa:
@@ -57,17 +60,46 @@ class BuscaEsparsa:
     def __len__(self) -> int:
         return len(self._ids)
 
-    def buscar(self, pergunta: str, *, k: int) -> list[tuple[str, float]]:
+    def ids_da_norma(self, id_norma: str) -> frozenset[str]:
+        """Os ids do índice que pertencem a uma norma, para `ids_permitidos`.
+
+        Fica aqui, e não em quem chama, porque `self._ids` é o único lugar do
+        processo que sabe o que o índice esparso contém — e o mapa é montado uma
+        vez por norma, não a cada busca.
+        """
+        if self._por_norma is None:
+            agrupado: dict[str, set[str]] = {}
+            for id_ in self._ids:
+                agrupado.setdefault(id_norma_do_chunk(id_), set()).add(id_)
+            self._por_norma = {norma: frozenset(ids) for norma, ids in agrupado.items()}
+        return self._por_norma.get(id_norma, frozenset())
+
+    def buscar(
+        self,
+        pergunta: str,
+        *,
+        k: int,
+        ids_permitidos: Container[str] | None = None,
+    ) -> list[tuple[str, float]]:
         """Os `k` melhores `(id, score)`, do maior score ao menor.
 
         A pergunta passa pela mesma tokenização do índice — se as duas pontas
         divergirem, o BM25 não acha nada e o erro é silencioso.
+
+        `ids_permitidos` restringe o universo **antes** do corte em `k`, e essa
+        ordem é o ponto. Filtrar depois devolveria só os documentos da norma que
+        por acaso entrassem no top-`k` global — numa pergunta cujo vocabulário é
+        comum a meio corpus, nenhum. Como `get_scores` já pontua todos os
+        documentos de qualquer jeito, restringir antes não custa nada a mais.
         """
         consulta = tokenizar(pergunta)
         if not consulta:
             return []
         scores = self._carregar().get_scores(consulta)
-        ordenados = sorted(zip(self._ids, scores, strict=True), key=lambda par: -par[1])
+        pares = zip(self._ids, scores, strict=True)
+        if ids_permitidos is not None:
+            pares = ((id_, s) for id_, s in pares if id_ in ids_permitidos)
+        ordenados = sorted(pares, key=lambda par: -par[1])
         # Score zero significa nenhum termo em comum: é ruído entrando na fusão
         # com posto alto, e posto é tudo que o RRF olha.
         return [(id_, float(score)) for id_, score in ordenados[:k] if score > 0.0]

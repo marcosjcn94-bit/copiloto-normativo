@@ -35,6 +35,9 @@ from evals.metricas import (
     taxa,
     taxa_de_erro_de_tool,
 )
+from evals.rodar import Reidratacao, Resultado, limitacoes
+
+from copiloto.llm.provedor import ErroDeProvedor
 
 RAIZ = Path(__file__).resolve().parents[1]
 GOLDEN = RAIZ / "evals" / "golden.jsonl"
@@ -452,3 +455,85 @@ def test_sem_perda_nao_ha_ressalva_a_fazer() -> None:
     )
 
     assert rodar.limitacoes([agente]) == []
+
+
+# --- reidratação da amostra perdida (Fase 7, retrabalho) ---------------------
+
+
+def test_recusa_do_provedor_ganha_segunda_chance_apos_a_janela() -> None:
+    """Amostra perdida é a maior limitação da camada 3, não o valor das notas.
+
+    O teto da Groq é por minuto: recusa por cota é transitória por definição, e
+    descartar a pergunta em vez de repeti-la troca `n` por nada.
+    """
+    esperas: list[float] = []
+    tentativas = iter([ErroDeProvedor("groq recusou o pedido: 429"), "medida"])
+
+    def acao() -> str:
+        proxima = next(tentativas)
+        if isinstance(proxima, Exception):
+            raise proxima
+        return proxima
+
+    reidratacao = Reidratacao(espera=65.0, dormir=esperas.append)
+
+    assert reidratacao.executar(acao) == "medida"
+    assert esperas == [65.0], "não esperou a janela inteira antes de repetir"
+    assert reidratacao.recuperadas == 1
+
+
+def test_recusa_persistente_continua_sendo_indisponibilidade() -> None:
+    """Repetir não pode virar insistir para sempre: o número tem de doer."""
+    esperas: list[float] = []
+
+    def sempre_recusa() -> str:
+        raise ErroDeProvedor("groq recusou o pedido: 413")
+
+    reidratacao = Reidratacao(espera=65.0, dormir=esperas.append)
+
+    with pytest.raises(ErroDeProvedor):
+        reidratacao.executar(sempre_recusa)
+    assert reidratacao.recuperadas == 0
+    assert len(esperas) == 1, "esperou mais vezes do que as tentativas permitem"
+
+
+def test_execucao_sem_recusa_nao_espera_nada() -> None:
+    esperas: list[float] = []
+    reidratacao = Reidratacao(espera=65.0, dormir=esperas.append)
+
+    assert reidratacao.executar(lambda: "medida") == "medida"
+    assert esperas == []
+    assert reidratacao.recuperadas == 0
+
+
+def test_limitacoes_registram_a_recuperacao_sem_esconde_la() -> None:
+    """A pergunta foi medida, mas a execução rodou no limite — e isso é dado."""
+    resultado = Resultado(
+        id="c3.agente",
+        camada=3,
+        descricao="x",
+        total=8,
+        detalhe={"medidas": 8, "indisponibilidades": [], "recuperadas_na_segunda_tentativa": 3},
+    )
+
+    avisos = limitacoes([resultado])
+
+    assert any("segunda tentativa" in aviso for aviso in avisos)
+
+
+def test_limitacoes_calam_quando_nada_se_perdeu() -> None:
+    """Ressalva que sobrevive à medição que a desmente é propaganda."""
+    resultado = Resultado(
+        id="c3.agente",
+        camada=3,
+        descricao="x",
+        total=12,
+        detalhe={
+            "medidas": 12,
+            "indisponibilidades": [],
+            "recuperadas_na_segunda_tentativa": 0,
+            "evidencias_truncadas": 0,
+        },
+    )
+
+    assert limitacoes([resultado]) == []

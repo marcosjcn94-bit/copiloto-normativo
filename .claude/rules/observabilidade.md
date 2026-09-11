@@ -60,3 +60,28 @@ ensina a ignorar relatório.
 Todo resultado gravado carrega commit, data, modelo e provedor. Faithfulness de 0,9 não
 significa nada sem dizer de qual modelo — e comparar duas medições sem isso compara coisas
 diferentes achando que compara a mesma.
+
+## Medição longa publica enquanto roda
+
+Varredura de parâmetros leva dezenas de minutos. Ela grava cada linha assim que a linha sai,
+em vez de montar tudo e escrever no fim. A primeira execução da varredura da Fase 7 foi
+interrompida no meio e perdeu 20 minutos de CPU inteiros, porque a saída estava represada num
+`grep` do pipeline: execução longa que só publica no fim é execução que, interrompida, não
+publica nada.
+
+Corolário para quem chama: nunca passar saída de execução longa por `grep` ou `tail` sem
+`--line-buffered`. O filtro engole o resultado parcial.
+
+## Hipótese testada e reprovada fica escrita
+
+Quando uma correção plausível é medida e não funciona, o resultado negativo vai para o
+artefato junto com o número que o sustenta — ver o desempate por RRF em `evals/ablacao.md`.
+Sem isso, a próxima pessoa (ou a próxima sessão) reimplementa a mesma ideia, paga o mesmo
+custo e chega ao mesmo lugar. Resultado negativo medido é informação cara; descartá-lo é
+jogar fora o que a medição comprou.
+
+## Parâmetro só muda com a medição ao lado
+
+Nenhum valor de `[recuperacao]` muda por intuição. Ou a varredura mostra ganho, ou o valor
+fica onde está — e o comentário no TOML registra a medição que o manteve, não só a que o
+moveu. Valor mantido sem número é valor não verificado, e o comentário precisa dizer isso.

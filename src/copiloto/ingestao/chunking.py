@@ -41,6 +41,26 @@ class Norma:
         return re.sub(r"[^a-z0-9]+", "-", sem_acento.lower()).strip("-")
 
 
+# Separador dos três níveis do id: `{id_norma}::art-{n}::u{ordem}`. O id é
+# cunhado em `montar_chunks`, logo abaixo, e lido por `id_norma_do_chunk` — as
+# duas pontas ficam neste arquivo de propósito, porque uma delas mudar sem a
+# outra faria o filtro por norma calar em vez de falhar.
+SEPARADOR_DE_ID = "::"
+
+
+def id_norma_do_chunk(id_chunk: str) -> str:
+    """A norma a que um chunk pertence, lida do próprio id.
+
+    O índice esparso guarda id e tokens, nada mais: para restringir o BM25 a uma
+    norma é preciso saber de qual norma cada id é, e perguntar isso ao vetorial
+    custaria uma ida ao adapter por busca. O id já carrega a resposta.
+
+    `tests/test_chunking.py` fecha o círculo: monta chunks de verdade e confere
+    que esta função devolve o `id_norma` que o chunk declara no campo.
+    """
+    return id_chunk.split(SEPARADOR_DE_ID, 1)[0]
+
+
 @dataclass(frozen=True, slots=True)
 class ChunkPai:
     """Um artigo inteiro — é isto que o LLM recebe como contexto."""

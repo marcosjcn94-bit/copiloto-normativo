@@ -30,6 +30,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from copiloto.tools.schemas import PADRAO_TIPOS_NORMA
+
 SEM_BASE_NORMATIVA = "Não encontrei base normativa para isso."
 
 # --- entrada -----------------------------------------------------------------
@@ -91,10 +93,8 @@ def sanear_pergunta(texto: str) -> Saneamento:
 
 # --- saída: extração de citação ----------------------------------------------
 
-_TIPOS = r"Resolu[çc][ãa]o(?:\s+(?:BCB|CMN))?|Circular|Instru[çc][ãa]o\s+Normativa(?:\s+BCB)?"
-
 _CITACAO = re.compile(
-    rf"(?P<tipo>{_TIPOS})"
+    rf"(?P<tipo>{PADRAO_TIPOS_NORMA})"
     r"\s*(?:n[º°o]\.?\s*)?"
     # O número da norma vem em duas grafias no corpus real: com separador de
     # milhar (`4.893`) e sem (`5274`, `3979`). A alternativa com ponto vem

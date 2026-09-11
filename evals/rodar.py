@@ -52,7 +52,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import ValidationError
 
@@ -84,6 +84,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evals.metricas import (  # noqa: E402 — a raiz precisa entrar no path antes
     Nota,
     PerguntaDeGabarito,
+    caminho_legivel,
     carregar_golden,
     contra_teto,
     contra_threshold,
@@ -97,6 +98,8 @@ from evals.metricas import (  # noqa: E402 — a raiz precisa entrar no path ant
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 RAIZ = Path(__file__).resolve().parents[1]
 GOLDEN = RAIZ / "evals" / "golden.jsonl"
@@ -716,6 +719,48 @@ def _notas_de(bruto: str) -> list[Nota]:
 TOOL_ESPERADA = {"rag": TOOL_BUSCAR, "sql": TOOL_CATALOGO}
 
 
+@dataclass(slots=True)
+class Reidratacao:
+    """Uma segunda chance para a chamada que o free tier recusou.
+
+    **Amostra perdida é a maior limitação da camada 3, não o valor das notas.**
+    Na medição de referência da Fase 7, 3 das 8 perguntas morreram em HTTP
+    429/413 e todas as métricas passaram a valer sobre n=5 — número pequeno
+    demais para os thresholds do §13 significarem alguma coisa. Recusa por cota
+    é transitória por definição: o teto da Groq é por minuto, então esperar a
+    janela e repetir recupera a pergunta em vez de descartá-la.
+
+    Repetir não maquia nada: a segunda tentativa executa o mesmo grafo sobre a
+    mesma pergunta e é julgada igual. O que muda é o `n`. E `recuperadas` é
+    publicado junto do resultado, porque uma execução que precisou de segunda
+    chance em metade da amostra diz algo sobre o ambiente que o número sozinho
+    esconde.
+    """
+
+    espera: float
+    dormir: Callable[[float], None] = time.sleep
+    tentativas: int = 2
+    recuperadas: int = 0
+    esperas_gastas: int = 0
+
+    def executar(self, acao: Callable[[], T]) -> T:
+        """Roda `acao`; se o provedor recusar, espera a janela e tenta de novo."""
+        for tentativa in range(1, self.tentativas + 1):
+            try:
+                resultado = acao()
+            except ErroDeProvedor:
+                if tentativa == self.tentativas:
+                    raise
+                self.esperas_gastas += 1
+                logger.warning("provedor recusou, aguardando a janela do rate limit")
+                self.dormir(self.espera)
+                continue
+            if tentativa > 1:
+                self.recuperadas += 1
+            return resultado
+        raise AssertionError("laço de reidratação sempre sai por return ou raise")
+
+
 def c3_agente(
     *,
     executar: Callable[[PerguntaDeGabarito], tuple[dict[str, Any], SessaoContadora]],
@@ -723,6 +768,7 @@ def c3_agente(
     perguntas: Sequence[PerguntaDeGabarito],
     pausa: float = 0.0,
     dormir: Callable[[float], None] = time.sleep,
+    reidratacao: Reidratacao | None = None,
 ) -> Resultado:
     """Roda o grafo inteiro sobre a amostra e colhe as quatro métricas do §9.
 
@@ -739,6 +785,7 @@ def c3_agente(
     nao_sei_certas = nao_sei_total = 0
     falhas: list[str] = []
     indisponibilidades: list[str] = []
+    nova_chance = reidratacao or Reidratacao(espera=pausa, dormir=dormir)
 
     for indice, pergunta in enumerate(perguntas):
         # O free tier da Groq limita tokens por minuto, e o backoff de
@@ -749,7 +796,7 @@ def c3_agente(
         if indice and pausa:
             dormir(pausa)
         try:
-            final, sessao = executar(pergunta)
+            final, sessao = nova_chance.executar(lambda p=pergunta: executar(p))
         except ErroDeProvedor as erro:
             # Provedor fora do ar ou cota estourada é propriedade do ambiente, não
             # do agente. Somar isso às falhas do agente faria a fase reprovar por
@@ -791,7 +838,15 @@ def c3_agente(
             # foi assim que a segunda execução desta fase se perdeu depois de já ter
             # medido tudo o que não dependia dele.
             try:
-                for nota in juiz.julgar(pergunta.pergunta, resposta, sessao.evidencias):
+                # Argumentos amarrados por padrão, e não capturados: a
+                # `Reidratacao` chama de novo, e um `lambda` que fecha sobre a
+                # variável do laço reexecutaria a pergunta seguinte.
+                julgamento = nova_chance.executar(
+                    lambda j=juiz, q=pergunta.pergunta, r=resposta, e=sessao.evidencias: j.julgar(
+                        q, r, e
+                    )
+                )
+                for nota in julgamento:
                     notas.append(Nota(pergunta.id, nota.criterio, nota.valor, nota.justificativa))
             except ErroDeProvedor as erro:
                 logger.warning("juiz indisponível", extra={"pergunta": pergunta.id})
@@ -808,6 +863,7 @@ def c3_agente(
             "amostra": [p.id for p in perguntas],
             "medidas": respondidas,
             "indisponibilidades": indisponibilidades,
+            "recuperadas_na_segunda_tentativa": nova_chance.recuperadas,
             "faithfulness_citacao": round(taxa(fieis, respondidas), 4),
             "faithfulness_juiz": round(medias.get("faithfulness", 0.0), 4),
             "relevancia_juiz": round(medias.get("relevancia", 0.0), 4),
@@ -949,6 +1005,13 @@ def limitacoes(resultados: Sequence[Resultado]) -> list[str]:
                 "Onde o corte morde, `faithfulness_juiz` mede o corte, não o agente — a nota "
                 "determinística `faithfulness_citacao` não sofre disso."
             )
+        recuperadas = agente.detalhe.get("recuperadas_na_segunda_tentativa", 0)
+        if recuperadas:
+            avisos.append(
+                f"{recuperadas} chamada(s) só passaram na segunda tentativa, depois de esperar "
+                "a janela do rate limit. As perguntas foram medidas normalmente; o número fica "
+                "registrado porque diz que a execução rodou no limite do free tier."
+            )
         if medidas and medidas < 10:
             avisos.append(
                 f"n={medidas} é amostra pequena demais para os thresholds do §13 serem "
@@ -1022,7 +1085,11 @@ def montar_relatorio(payload: dict[str, Any]) -> str:
 
 
 def executar_camadas(
-    camadas: Sequence[int], *, tamanho_amostra: int, pausa: float = 0.0
+    camadas: Sequence[int],
+    *,
+    tamanho_amostra: int,
+    pausa: float = 0.0,
+    espera_apos_recusa: float = 0.0,
 ) -> dict[str, Any]:
     """Roda o que foi pedido e o ambiente permite, e devolve o payload completo."""
     dados = tomllib.loads(TOML.read_text(encoding="utf-8"))
@@ -1091,6 +1158,7 @@ def executar_camadas(
                     _rodar_camada_3(
                         perguntas=amostra_estratificada(perguntas, tamanho_amostra),
                         pausa=pausa,
+                        espera_apos_recusa=espera_apos_recusa,
                         recuperador=recuperador,
                         catalogo=catalogo,
                         ptools=ptools,
@@ -1117,6 +1185,7 @@ def _rodar_camada_3(
     *,
     perguntas: Sequence[PerguntaDeGabarito],
     pausa: float,
+    espera_apos_recusa: float = 0.0,
     recuperador,
     catalogo,
     ptools: ParametrosDeTools,
@@ -1169,7 +1238,13 @@ def _rodar_camada_3(
         )
         return dict(final), sessao
 
-    resultado = c3_agente(executar=executar, juiz=juiz, perguntas=perguntas, pausa=pausa)
+    resultado = c3_agente(
+        executar=executar,
+        juiz=juiz,
+        perguntas=perguntas,
+        pausa=pausa,
+        reidratacao=Reidratacao(espera=espera_apos_recusa or pausa),
+    )
     resultado.detalhe |= procedencia
     return resultado
 
@@ -1194,6 +1269,16 @@ def main() -> int:
         default=25.0,
         help="segundos entre perguntas da camada 3, para não estourar o free tier (padrão: 25)",
     )
+    analisador.add_argument(
+        "--espera-apos-recusa",
+        type=float,
+        default=65.0,
+        help=(
+            "segundos de espera antes de repetir a pergunta que o provedor recusou. "
+            "O teto da Groq e por minuto, entao a janela precisa passar inteira "
+            "(padrao: 65)"
+        ),
+    )
     analisador.add_argument("--json", type=Path, default=RAIZ / "evals" / "resultados.json")
     analisador.add_argument("--relatorio", type=Path, default=RAIZ / "evals" / "relatorio.md")
     argumentos = analisador.parse_args()
@@ -1201,7 +1286,12 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s %(message)s")
     camadas = [1, 2, 3] if argumentos.todas else sorted(set(argumentos.camada))
 
-    payload = executar_camadas(camadas, tamanho_amostra=argumentos.amostra, pausa=argumentos.pausa)
+    payload = executar_camadas(
+        camadas,
+        tamanho_amostra=argumentos.amostra,
+        pausa=argumentos.pausa,
+        espera_apos_recusa=argumentos.espera_apos_recusa,
+    )
     argumentos.json.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -1225,7 +1315,7 @@ def main() -> int:
                 f"           {nome:26} {veredito['valor']} "
                 f"{'ok' if veredito['aprovado'] else 'ABAIXO DO EXIGIDO'}"
             )
-    print(f"relatório em {argumentos.relatorio.relative_to(RAIZ)}")
+    print(f"relatório em {caminho_legivel(argumentos.relatorio)}")
 
     reprovou = any(not v["aprovada"] for v in payload["verificacoes"] if v["executada"]) or any(
         isinstance(v, dict) and not v["aprovado"] for v in payload["vereditos"].values()

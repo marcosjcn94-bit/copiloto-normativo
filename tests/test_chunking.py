@@ -2,7 +2,7 @@
 
 import pytest
 
-from copiloto.ingestao.chunking import Norma, montar_chunks
+from copiloto.ingestao.chunking import Norma, id_norma_do_chunk, montar_chunks
 from copiloto.ingestao.extracao import extrair_blocos
 
 HTML = """
@@ -84,3 +84,19 @@ def test_titulo_do_capitulo_e_absorvido_na_metadata(norma: Norma) -> None:
     pais, filhos = montar_chunks(extrair_blocos(HTML), norma)
     assert pais[0].capitulo == "CAPÍTULO I — DO OBJETO"
     assert all(f.texto != "DO OBJETO" for f in filhos)
+
+
+def test_id_do_chunk_devolve_a_norma_que_ele_declara(norma: Norma) -> None:
+    """Fecha o círculo entre quem cunha o id e quem o lê.
+
+    O filtro por norma no BM25 depende de ler a norma do id, porque o índice
+    esparso guarda id e tokens e mais nada. Se o formato do id mudar e esta
+    leitura não mudar junto, o filtro não quebra: ele passa a devolver conjunto
+    vazio, e a busca escopada fica silenciosamente cega.
+    """
+    _, filhos = montar_chunks(extrair_blocos(HTML), norma)
+
+    assert filhos, "sem filhos não há o que conferir"
+    for filho in filhos:
+        assert id_norma_do_chunk(filho.id) == filho.id_norma
+        assert id_norma_do_chunk(filho.id_pai) == filho.id_norma

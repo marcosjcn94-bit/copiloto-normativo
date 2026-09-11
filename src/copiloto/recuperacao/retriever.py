@@ -47,6 +47,7 @@ class ParametrosRecuperacao:
     k_rrf: int
     k_final: int
     score_minimo: float
+    max_chars_trecho: int
     colecao: str
     modelo_embedding: str
     modelo_rerank: str
@@ -145,6 +146,16 @@ class Recuperador:
     def parametros(self) -> ParametrosRecuperacao:
         return self._parametros
 
+    @property
+    def catalogo(self) -> sqlite3.Connection | None:
+        """A conexão que o pipeline usa, para quem precisa resolver metadado.
+
+        Exposta porque o escopo por norma é resolvido contra o catálogo por quem
+        chama (a tool, e a ablação que a mede), e alcançar `_catalogo` de fora
+        seria acoplar ao atributo privado só para não escrever esta propriedade.
+        """
+        return self._catalogo
+
     def buscar(
         self,
         pergunta: str,
@@ -152,25 +163,37 @@ class Recuperador:
         modo: Modo = "hibrido_rerank",
         filtro: Mapping[str, Any] | None = None,
         k_final: int | None = None,
+        escopo: str | None = None,
     ) -> list[Trecho]:
         """Executa o pipeline e devolve até `k_final` artigos.
 
-        `modo` existe para a tabela de ablação da Fase 3: as três configurações
-        medidas são três chamadas deste mesmo método, não três implementações
-        paralelas que poderiam divergir e falsear a comparação.
+        `modo` existe para a tabela de ablação da Fase 3: as configurações
+        medidas são chamadas deste mesmo método, não implementações paralelas
+        que poderiam divergir e falsear a comparação.
+
+        `escopo` é um `id_norma`: restringe a busca ao texto de uma única norma.
+        Vale quando a pergunta já diz onde procurar («segundo a Circular nº
+        3.979, quem é o responsável…»), e o ganho não é de ordenação, é de
+        universo — o artigo certo passa a disputar com os 50 artigos daquela
+        norma em vez de com os 344 do corpus. As duas pontas da recuperação são
+        restringidas: `where` no vetorial e `ids_permitidos` no BM25. Restringir
+        só uma faria o RRF fundir um lado escopado com um lado que não é, e o
+        resultado não seria nem uma coisa nem outra.
         """
         if modo not in MODOS:
             raise ValueError(f"modo desconhecido: {modo!r}")
         p = self._parametros
         limite = k_final if k_final is not None else p.k_final
+        filtro_denso = {**dict(filtro or {}), "id_norma": escopo} if escopo else filtro
 
-        densas = self._densa.buscar(pergunta, k=p.k_denso, filtro=filtro)
+        densas = self._densa.buscar(pergunta, k=p.k_denso, filtro=filtro_denso)
         conhecidas = {o.id: o for o in densas}
 
         if modo == "denso":
             candidatas = densas
         else:
-            esparsas = self._esparsa.buscar(pergunta, k=p.k_esparso)
+            permitidos = self._esparsa.ids_da_norma(escopo) if escopo else None
+            esparsas = self._esparsa.buscar(pergunta, k=p.k_esparso, ids_permitidos=permitidos)
             fundidos = rrf([[o.id for o in densas], [id_ for id_, _ in esparsas]], k_rrf=p.k_rrf)
             candidatas = self._hidratar(fundidos, conhecidas)
 
@@ -226,7 +249,9 @@ class Recuperador:
         # a ordem final, sem reordenar nada.
         textos = self._textos_dos_artigos(list(melhores))
         return [
-            _para_trecho(id_pai, ocorrencia, textos.get(id_pai))
+            _para_trecho(
+                id_pai, ocorrencia, textos.get(id_pai), max_chars=self._parametros.max_chars_trecho
+            )
             for id_pai, ocorrencia in melhores.items()
         ]
 
@@ -245,7 +270,43 @@ class Recuperador:
         return {linha["id"]: linha for linha in linhas}
 
 
-def _para_trecho(id_pai: str, ocorrencia: Ocorrencia, artigo: sqlite3.Row | None) -> Trecho:
+AVISO_DE_CORTE = "\n[…artigo truncado aqui: {omitidos} caracteres omitidos]"
+
+
+def encurtar_artigo(texto: str, *, max_chars: int) -> str:
+    """Corta um artigo longo demais para o orçamento, avisando que cortou.
+
+    **Por que cortar o artigo e não baixar o `k_final`.** Os 344 artigos do
+    corpus têm mediana de 401 caracteres e máximo de 16.437: cinco artigos
+    medianos custam ~575 tokens, e um único artigo do topo custa ~4.700. O
+    estouro de contexto medido na Fase 7 não vinha de entregar cinco trechos,
+    vinha de entregar *um* trecho gigante. Baixar `k_final` cobraria recall nas
+    32 perguntas do gabarito para resolver um problema que 4% dos artigos criam;
+    o teto por artigo cobra fidelidade só de quem estourou.
+
+    O corte é anunciado no texto porque um artigo truncado em silêncio é pior
+    que um artigo ausente: o modelo conclui pela ausência do inciso que foi
+    cortado, e nada no contexto o contradiz.
+
+    O corte procura a última quebra de parágrafo antes do teto — artigo do BCB é
+    caput mais incisos, e cortar no meio de um inciso entrega meia obrigação, que
+    é o pedaço de texto mais perigoso do corpus. Sem quebra utilizável, corta no
+    teto mesmo.
+    """
+    if max_chars <= 0 or len(texto) <= max_chars:
+        return texto
+    cabeca = texto[:max_chars]
+    quebra = cabeca.rfind("\n")
+    # Só respeita a quebra se ela não jogar fora mais de um quarto do orçamento;
+    # um artigo de caput único e longo não tem quebra nenhuma perto do fim.
+    if quebra >= max_chars * 3 // 4:
+        cabeca = cabeca[:quebra]
+    return cabeca.rstrip() + AVISO_DE_CORTE.format(omitidos=len(texto) - len(cabeca))
+
+
+def _para_trecho(
+    id_pai: str, ocorrencia: Ocorrencia, artigo: sqlite3.Row | None, *, max_chars: int
+) -> Trecho:
     """Metadata do chunk + texto do artigo. Se o catálogo não tem o pai, cai no filho."""
     meta = ocorrencia.metadata
     return Trecho(
@@ -256,7 +317,10 @@ def _para_trecho(id_pai: str, ocorrencia: Ocorrencia, artigo: sqlite3.Row | None
         numero_artigo=int(
             artigo["numero_artigo"] if artigo is not None else meta.get("numero_artigo", 0)
         ),
-        texto=str(artigo["texto"]) if artigo is not None else ocorrencia.texto,
+        texto=encurtar_artigo(
+            str(artigo["texto"]) if artigo is not None else ocorrencia.texto,
+            max_chars=max_chars,
+        ),
         score=ocorrencia.score,
         revogada=bool(meta.get("revogada", False)),
         capitulo=str(artigo["capitulo"] if artigo is not None else meta.get("capitulo", "")),

@@ -9,13 +9,17 @@ ela está medida em `evals/ablacao.md`.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Container, Mapping, Sequence
 from typing import Any
 
 import pytest
 
 from copiloto.recuperacao.adapters.base import AdaptadorVetorial, Ocorrencia
-from copiloto.recuperacao.retriever import ParametrosRecuperacao, Recuperador
+from copiloto.recuperacao.retriever import (
+    ParametrosRecuperacao,
+    Recuperador,
+    encurtar_artigo,
+)
 
 PARAMETROS = ParametrosRecuperacao(
     k_denso=10,
@@ -23,6 +27,10 @@ PARAMETROS = ParametrosRecuperacao(
     k_rrf=60,
     k_final=2,
     score_minimo=0.0,
+    # Teto alto de propósito: os testes deste arquivo medem fusão, dedup por pai
+    # e filtro, não truncamento. O corte tem os seus, e um teto baixo aqui faria
+    # todos eles compararem texto cortado sem dizer que compara.
+    max_chars_trecho=100_000,
     colecao="teste",
     modelo_embedding="irrelevante",
     modelo_rerank="irrelevante",
@@ -81,9 +89,23 @@ class DensaFalsa:
 class EsparsaFalsa:
     def __init__(self, resultado: Sequence[tuple[str, float]]) -> None:
         self._resultado = list(resultado)
+        self.permitidos_recebidos: list[Container[str] | None] = []
 
-    def buscar(self, pergunta: str, *, k: int) -> list[tuple[str, float]]:
-        return self._resultado[:k]
+    def buscar(
+        self,
+        pergunta: str,
+        *,
+        k: int,
+        ids_permitidos: Container[str] | None = None,
+    ) -> list[tuple[str, float]]:
+        self.permitidos_recebidos.append(ids_permitidos)
+        pares = self._resultado
+        if ids_permitidos is not None:
+            pares = [(id_, s) for id_, s in pares if id_ in ids_permitidos]
+        return pares[:k]
+
+    def ids_da_norma(self, id_norma: str) -> frozenset[str]:
+        return frozenset(id_ for id_, _ in self._resultado if id_.startswith(f"{id_norma}::"))
 
 
 class ReordenadorFalso:
@@ -229,3 +251,86 @@ def test_chunk_sem_pai_e_descartado_e_nao_citado_sem_artigo() -> None:
     recuperador, _ = montar(denso=["c1"], esparso=[], tudo=[sem_pai])
 
     assert recuperador.buscar("qualquer", modo="denso") == []
+
+
+# --- escopo e teto por artigo (Fase 7, retrabalho de recuperação) -------------
+
+
+def test_escopo_restringe_as_duas_pontas_da_busca() -> None:
+    """Restringir só o denso faria o RRF fundir um lado escopado com outro que não é.
+
+    O resultado não seria nem a busca ampla nem a escopada: o BM25 continuaria
+    injetando artigo de fora da norma no topo da fusão, que é exatamente o
+    problema que o escopo existe para resolver.
+    """
+    tudo = [
+        _ocorrencia("resolucao-bcb-85-2021::art-1::u0", pai="p1", artigo=1),
+        _ocorrencia("circular-3979-2020::art-9::u0", pai="p9", artigo=9),
+    ]
+    recuperador, _ = montar(
+        denso=["resolucao-bcb-85-2021::art-1::u0"],
+        esparso=[("circular-3979-2020::art-9::u0", 9.0)],
+        tudo=tudo,
+    )
+
+    recuperador.buscar("qualquer", modo="hibrido", escopo="resolucao-bcb-85-2021")
+
+    permitidos = recuperador._esparsa.permitidos_recebidos[-1]  # type: ignore[attr-defined]
+    assert permitidos is not None, "o BM25 buscou no corpus inteiro apesar do escopo"
+    assert "circular-3979-2020::art-9::u0" not in permitidos
+
+
+def test_sem_escopo_o_bm25_ve_o_corpus_inteiro() -> None:
+    recuperador, _ = montar(denso=[], esparso=[], tudo=[])
+
+    recuperador.buscar("qualquer", modo="hibrido")
+
+    assert recuperador._esparsa.permitidos_recebidos == [None]  # type: ignore[attr-defined]
+
+
+def test_artigo_longo_e_cortado_e_o_corte_e_anunciado() -> None:
+    """Artigo truncado em silêncio é pior que artigo ausente.
+
+    O modelo conclui pela ausência do inciso que sumiu, e nada no contexto o
+    contradiz. O aviso é o que permite ao juiz — e ao leitor — saber que a
+    ausência é do corte, não da norma.
+    """
+    import dataclasses
+
+    tudo = [_ocorrencia("c1", pai="p1", artigo=1)]
+    recuperador, _ = montar(denso=["c1"], esparso=[], tudo=tudo)
+    recuperador._parametros = dataclasses.replace(PARAMETROS, max_chars_trecho=10)
+
+    (trecho,) = recuperador.buscar("qualquer", modo="denso")
+
+    assert "truncado" in trecho.texto
+    assert "caracteres omitidos" in trecho.texto
+
+
+def test_artigo_dentro_do_teto_passa_intacto() -> None:
+    """88,7% dos artigos do corpus estão neste caso — o corte é a exceção."""
+    tudo = [_ocorrencia("c1", pai="p1", artigo=1)]
+    recuperador, _ = montar(denso=["c1"], esparso=[], tudo=tudo)
+
+    (trecho,) = recuperador.buscar("qualquer", modo="denso")
+
+    assert trecho.texto == "texto do chunk c1"
+    assert "truncado" not in trecho.texto
+
+
+def test_corte_prefere_a_quebra_de_paragrafo() -> None:
+    """Artigo do BCB é caput mais incisos: cortar no meio de um inciso entrega
+    meia obrigação, que é o pedaço de texto mais perigoso do corpus."""
+    texto = "caput do artigo\nI - primeiro inciso\nII - segundo inciso muito mais longo"
+    cortado = encurtar_artigo(texto, max_chars=40)
+
+    assert cortado.startswith("caput do artigo\nI - primeiro inciso")
+    assert "II -" not in cortado.split("[")[0]
+
+
+def test_corte_sem_quebra_utilizavel_corta_no_teto() -> None:
+    """Caput único e longo não tem quebra nenhuma perto do fim."""
+    cortado = encurtar_artigo("a" * 100, max_chars=30)
+
+    assert cortado.startswith("a" * 30)
+    assert "70 caracteres omitidos" in cortado

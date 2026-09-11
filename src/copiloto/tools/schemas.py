@@ -69,6 +69,17 @@ PADRAO_CLIENTE = r"^[A-Z]{2,4}-\d{4,8}$"
 # Número de norma como o BCB publica: dígitos, com ou sem separador de milhar.
 PADRAO_NUMERO_NORMA = r"^\d{1,3}(\.\d{3})*$|^\d{1,6}$"
 
+# Os tipos de norma como aparecem em texto corrido, com e sem acento. Mora aqui,
+# e não em cada consumidor, porque são dois: `grafo.guardrails` monta com ele o
+# regex de citação (norma + artigo) que confere a resposta do modelo, e
+# `tools.buscar_normativo` monta o de referência (norma sem artigo) que detecta
+# quando a pergunta já diz em que norma procurar. Duas gramáticas divergentes do
+# mesmo vocabulário dariam um par em que a busca acha a norma e o validador não
+# reconhece a citação dela — a Fase 7 já pagou uma vez por essa classe de erro.
+PADRAO_TIPOS_NORMA = (
+    r"Resolu[çc][ãa]o(?:\s+(?:BCB|CMN))?|Circular|Instru[çc][ãa]o\s+Normativa(?:\s+BCB)?"
+)
+
 # Ano: 1988 é o piso do arcabouço regulatório vigente; o teto dá folga para
 # norma publicada com vigência futura sem virar manutenção anual.
 ANO_MINIMO = 1988
@@ -107,6 +118,23 @@ class EntradaBuscarNormativo(Contrato):
     tema: Tema | None = Field(
         default=None,
         description="Restringe a busca a um tema do corpus. Omita para buscar em todos.",
+    )
+    numero: Annotated[str, Field(pattern=PADRAO_NUMERO_NORMA)] | None = Field(
+        default=None,
+        description=(
+            "Restringe a busca ao texto de UMA norma, pelo número como publicado "
+            "(ex.: '4.893' ou '3979'). Informe sempre que a pergunta disser em qual "
+            "norma procurar: buscar dentro de uma norma é muito mais preciso do que "
+            "buscar no corpus inteiro. Omita quando a pergunta não nomear a norma."
+        ),
+    )
+    tipo: TipoDeNorma | None = Field(
+        default=None,
+        description=(
+            "Tipo da norma, para desempatar quando o mesmo número existe em tipos "
+            "diferentes (Resolução CMN nº 85 e Resolução BCB nº 85). Só faz sentido "
+            "junto de `numero`."
+        ),
     )
     apenas_vigentes: bool = Field(
         default=True,

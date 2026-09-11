@@ -233,12 +233,15 @@ class RecuperadorDeMentira:
             k_rrf=60,
             k_final=5,
             score_minimo=0.5,
+            max_chars_trecho=2000,
             colecao="normativos_bcb",
             modelo_embedding="modelo-de-teste",
             modelo_rerank="rerank-de-teste",
         )
 
-    def buscar(self, pergunta: str, *, k_final: int | None = None) -> list[Trecho]:
+    def buscar(
+        self, pergunta: str, *, k_final: int | None = None, escopo: str | None = None
+    ) -> list[Trecho]:
         self.buscas.append(pergunta)
         return [
             Trecho(

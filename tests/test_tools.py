@@ -23,7 +23,12 @@ from copiloto.llm.provedor import ChamadaDeTool, Mensagem, RespostaLLM
 from copiloto.recuperacao.retriever import ParametrosRecuperacao, Trecho
 from copiloto.resiliencia import PoliticaDeRetentativa
 from copiloto.tools import schemas as s
-from copiloto.tools.buscar_normativo import buscar_normativo
+from copiloto.tools.buscar_normativo import (
+    NORMA_INEXISTENTE,
+    buscar_normativo,
+    escopo_para,
+    normas_citadas,
+)
 from copiloto.tools.consultar_catalogo import consultar_catalogo
 from copiloto.tools.registrar_crm import ErroDeCrm, enviar_registro, propor_registro
 from copiloto.tools.registro import (
@@ -53,19 +58,29 @@ class RecuperadorFalso:
     def __init__(self, trechos: list[Trecho], k_final: int = 5) -> None:
         self._trechos = trechos
         self.pedidos: list[int] = []
+        self.escopos: list[str | None] = []
         self.parametros = ParametrosRecuperacao(
             k_denso=30,
             k_esparso=30,
             k_rrf=60,
             k_final=k_final,
             score_minimo=0.5,
+            max_chars_trecho=2000,
             colecao="teste",
             modelo_embedding="m",
             modelo_rerank="r",
         )
 
-    def buscar(self, pergunta: str, *, k_final: int | None = None, **_: Any) -> list[Trecho]:
+    def buscar(
+        self,
+        pergunta: str,
+        *,
+        k_final: int | None = None,
+        escopo: str | None = None,
+        **_: Any,
+    ) -> list[Trecho]:
         self.pedidos.append(k_final or self.parametros.k_final)
+        self.escopos.append(escopo)
         return self._trechos[: k_final or self.parametros.k_final]
 
 
@@ -660,3 +675,204 @@ def test_parametros_de_tools_vem_do_toml():
     assert parametros.limite_catalogo >= 1
     assert parametros.fator_sobrebusca >= 1
     assert parametros.max_autocorrecao >= 0
+
+
+# --- escopo por norma (Fase 7, retrabalho de recuperação) ---------------------
+
+
+def test_pergunta_que_nomeia_a_norma_escopa_a_busca(catalogo: sqlite3.Connection) -> None:
+    """O ganho de recall da quarta linha da ablação nasce aqui.
+
+    Sem escopo, «segundo a Resolução CMN nº 4.893…» disputa com os 344 artigos
+    do corpus. Com escopo, disputa com os da própria norma.
+    """
+    recuperador = RecuperadorFalso([])
+    entrada = s.EntradaBuscarNormativo(
+        pergunta="Segundo a Resolução CMN nº 4.893, de 2021, por quanto tempo guardar?"
+    )
+
+    buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == ["resolucao-cmn-4893-2021"]
+
+
+def test_pergunta_sem_norma_nomeada_busca_no_corpus_inteiro(
+    catalogo: sqlite3.Connection,
+) -> None:
+    recuperador = RecuperadorFalso([])
+    entrada = s.EntradaBuscarNormativo(pergunta="a instituição precisa divulgar a política?")
+
+    buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == [None]
+
+
+def test_numero_explicito_vence_o_deduzido_da_pergunta(catalogo: sqlite3.Connection) -> None:
+    """Quando o modelo afirma a norma, a afirmação dele manda — não o nosso regex."""
+    recuperador = RecuperadorFalso([])
+    entrada = s.EntradaBuscarNormativo(
+        pergunta="Comparada à Resolução CMN nº 4.893, o que mudou?", numero="85"
+    )
+
+    buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == ["resolucao-bcb-85-2021"]
+
+
+def test_norma_pedida_que_nao_existe_devolve_vazio_sem_buscar(
+    catalogo: sqlite3.Connection,
+) -> None:
+    """Não cair para a busca ampla é o ponto.
+
+    Buscar no corpus inteiro «para não voltar de mãos vazias» devolveria artigo
+    de outra norma para uma pergunta que nomeou a sua — e o modelo citaria esse
+    artigo achando que é da norma pedida.
+    """
+    recuperador = RecuperadorFalso([_trecho_qualquer()])
+    entrada = s.EntradaBuscarNormativo(pergunta="o que a norma exige?", numero="9999")
+
+    saida = buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert saida.total == 0
+    assert saida.trechos == ()
+    assert recuperador.escopos == [], "não podia ter chegado a buscar"
+
+
+def test_norma_deduzida_que_nao_existe_no_corpus_nao_impede_a_busca(
+    catalogo: sqlite3.Connection,
+) -> None:
+    """Palpite nosso que não resolve é descartado; afirmação do modelo, não.
+
+    O par com o teste acima é a assimetria deliberada: `numero` é o modelo
+    dizendo o que quer, e a dedução é um palpite sobre o texto do usuário.
+    """
+    recuperador = RecuperadorFalso([_trecho_qualquer()])
+    entrada = s.EntradaBuscarNormativo(
+        pergunta="O que a Circular nº 1.234, de 1999, diz sobre backup?"
+    )
+
+    saida = buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == [None]
+    assert saida.total == 1
+
+
+def test_numero_ambiguo_nao_escopa(catalogo: sqlite3.Connection) -> None:
+    """Escopar no palpite errado é pior que não escopar.
+
+    A busca ampla ainda pode achar o artigo certo; a busca escopada na norma
+    errada não pode. `85` aqui existe em dois tipos, e a pergunta não desempata.
+    """
+    catalogo.execute(
+        "INSERT INTO normas (id_norma, tipo, numero, ano, data, tema, status_vigencia, url,"
+        " atualizado_em) VALUES ('resolucao-cmn-85-2019', 'Resolução CMN', '85', 2019,"
+        " '2019-01-01', 'risco_operacional', 'vigente', 'http://x/85cmn', '2026-09-10')"
+    )
+    recuperador = RecuperadorFalso([])
+    entrada = s.EntradaBuscarNormativo(pergunta="O que a Resolução nº 85 exige sobre nuvem?")
+
+    buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == [None]
+
+
+def test_tipo_desempata_numero_ambiguo(catalogo: sqlite3.Connection) -> None:
+    catalogo.execute(
+        "INSERT INTO normas (id_norma, tipo, numero, ano, data, tema, status_vigencia, url,"
+        " atualizado_em) VALUES ('resolucao-cmn-85-2019', 'Resolução CMN', '85', 2019,"
+        " '2019-01-01', 'risco_operacional', 'vigente', 'http://x/85cmn', '2026-09-10')"
+    )
+    recuperador = RecuperadorFalso([])
+    entrada = s.EntradaBuscarNormativo(pergunta="O que a Resolução BCB nº 85 exige sobre nuvem?")
+
+    buscar_normativo(entrada, recuperador=recuperador, catalogo=catalogo)
+
+    assert recuperador.escopos == ["resolucao-bcb-85-2021"]
+
+
+@pytest.mark.parametrize(
+    ("texto", "numero"),
+    [
+        ("segundo a Circular nº 3.979, de 2020", "3979"),
+        ("segundo a Circular nº 3979", "3979"),
+        ("a Resolução CMN 5274 determina", "5274"),
+        ("Resolução BCB nº 85, de 2021", "85"),
+        ("Instrução Normativa BCB nº 700", "700"),
+    ],
+)
+def test_numero_de_norma_e_lido_nas_duas_grafias(texto: str, numero: str) -> None:
+    r"""O defeito mais caro da Fase 7 tinha esta forma, um nível acima.
+
+    `\d{1,6}` sozinho casa `4` em `4.893` e para; a alternativa com separador
+    precisa vir primeiro. Aqui isso vale para achar a norma, lá valia para
+    validar a citação — o mesmo erro derrubaria as duas pontas.
+    """
+    (referencia,) = normas_citadas(texto)
+    assert referencia.numero == numero
+
+
+def test_normas_citadas_ignora_numero_solto() -> None:
+    """`85` sem tipo não é referência a norma; é prazo, artigo ou quantia."""
+    assert normas_citadas("guardar por 85 dias e revisar em 2 anos") == ()
+
+
+def test_toda_pergunta_do_gabarito_que_nomeia_norma_aponta_para_a_norma_certa() -> None:
+    """A hipótese que autoriza deduzir escopo do texto, fixada como teste.
+
+    Foi medida antes de a dedução ser adotada: das perguntas `rag` do gabarito,
+    as que nomeiam uma norma nomeiam a que contém a resposta. Se uma pergunta
+    futura citar uma norma de passagem e esperar resposta em outra, a dedução
+    passa a prejudicá-la — e é aqui que isso aparece, não no recall.
+    """
+    catalogo_real = RAIZ / "data" / "catalogo.sqlite"
+    if not catalogo_real.exists():
+        pytest.skip("catálogo da Fase 2 ausente: rodar a indexação antes")
+    conexao = sqlite3.connect(catalogo_real)
+    conexao.row_factory = sqlite3.Row
+    perguntas = [
+        json.loads(linha)
+        for linha in (RAIZ / "evals" / "golden.jsonl").read_text(encoding="utf-8").splitlines()
+        if linha.strip()
+    ]
+    nomeiam = 0
+    for pergunta in perguntas:
+        if pergunta["tipo"] != "rag":
+            continue
+        entrada = s.EntradaBuscarNormativo(pergunta=pergunta["pergunta"])
+        escopo = escopo_para(entrada, conexao)
+        if escopo is None or escopo is NORMA_INEXISTENTE:
+            continue
+        nomeiam += 1
+        esperadas = {e["id_norma"] for e in pergunta["esperado"]}
+        assert escopo in esperadas, (
+            f"{pergunta['id']}: escopo {escopo} não contém a resposta {sorted(esperadas)}"
+        )
+    assert nomeiam >= 14, "o gabarito perdeu perguntas que nomeiam a norma"
+
+
+def _trecho_qualquer() -> Trecho:
+    return Trecho(
+        id="resolucao-bcb-85-2021::art-1",
+        id_norma="resolucao-bcb-85-2021",
+        norma="Resolução BCB nº 85, de 2021",
+        artigo="Art. 1º",
+        numero_artigo=1,
+        texto="texto",
+        score=1.0,
+        revogada=False,
+    )
+
+
+def test_numero_pedido_sem_catalogo_nao_vira_afirmacao_de_inexistencia() -> None:
+    """«Não consigo verificar» não é «não existe».
+
+    Sem catálogo não há como resolver o número, e devolver vazio afirmaria sobre
+    o corpus uma coisa que só o corpus pode dizer. A busca segue ampla.
+    """
+    recuperador = RecuperadorFalso([_trecho_qualquer()])
+    entrada = s.EntradaBuscarNormativo(pergunta="o que a norma exige?", numero="4.893")
+
+    saida = buscar_normativo(entrada, recuperador=recuperador, catalogo=None)
+
+    assert recuperador.escopos == [None]
+    assert saida.total == 1

@@ -41,3 +41,33 @@ desenvolvimento; corpus completo só com a amostra verde.
 ## Contexto
 
 Nunca imprimir chunk, texto de norma ou vetor no chat. Reportar contagem, IDs ou métricas.
+
+## Escopo por norma restringe as duas pontas
+
+Quando a busca é restrita a uma norma, o corte vai no vetorial (`where`) **e** no BM25
+(`ids_permitidos`), antes do top-`k`. Restringir só um lado faz o RRF fundir um lado escopado
+com outro que não é, e o resultado não é nem a busca ampla nem a escopada. Filtrar *depois*
+do top-`k` é pior ainda: devolve só os artigos da norma que por acaso entraram no top-30 do
+corpus inteiro, que é justamente o que já não estava acontecendo.
+
+Corolário: `k` é orçamento de candidatos, não de resultado. Todo filtro que precise atuar
+depois da recuperação paga sobrebusca explícita (`fator_sobrebusca`), nunca silenciosa.
+
+## Ambiguidade não escopa
+
+Número de norma que resolve para mais de uma norma não vira escopo. Busca ampla ainda pode
+achar o artigo certo; busca escopada na norma errada não pode. O mesmo vale para norma
+deduzida do texto que não existe no corpus: o palpite é descartado e a busca segue ampla.
+
+A exceção é o número **pedido explicitamente** pelo modelo: aí a ausência é resposta, e a
+tool devolve zero trechos em vez de cair para a busca ampla. Cair devolveria artigo de outra
+norma para uma pergunta que nomeou a sua.
+
+## Artigo cortado diz que foi cortado
+
+`max_chars_trecho` corta artigo longo demais para o orçamento, e o corte é anunciado dentro
+do próprio texto. Artigo truncado em silêncio é pior que artigo ausente: o modelo conclui
+pela ausência do inciso que sumiu e nada no contexto o contradiz.
+
+O corte prefere a última quebra de parágrafo antes do teto. Artigo do BCB é caput mais
+incisos, e cortar no meio de um inciso entrega meia obrigação.

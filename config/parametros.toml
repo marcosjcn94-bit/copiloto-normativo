@@ -12,15 +12,51 @@
 k_denso          = 30      # candidatos da busca vetorial
 k_esparso        = 30      # candidatos do BM25
 k_rrf            = 60      # constante do Reciprocal Rank Fusion
-k_final          = 5       # trechos entregues ao LLM após o rerank
+k_final          = 8       # trechos entregues ao LLM após o rerank
 score_minimo     = 0.5     # abaixo disso, descarta — só vale no modo com rerank
+max_chars_trecho = 2000    # teto por artigo entregue; acima disso corta e avisa
 
-# `score_minimo` mantido no 0.5 do §13, mas sem medição que o sustente: na
-# ablação de 2026-09-09 nenhum valor entre 0,0 e 0,7 mudou recall@5 ou MRR. O
-# corte é inerte sobre as perguntas com resposta no corpus. A função real do
-# threshold é descartar quando nada é relevante, e isso quem exercita são as
-# perguntas de "não sei", medidas na Fase 7. Até lá, tratar este número como
-# não verificado — nenhuma medição até hoje o aprova nem o reprova.
+# `k_final` subiu de 5 para 8 e `max_chars_trecho` entrou junto: são uma decisão
+# só. A medição sobre os 344 artigos do catálogo:
+#
+#   mediana    401 chars (~115 tokens)     p90    2.300
+#   média    1.025                         máximo 16.437 (~4.700 tokens)
+#
+# O estouro de contexto da Fase 7 (7.655 tokens na 2ª chamada, HTTP 413 na 3ª)
+# não vinha do `k_final = 5`; vinha de UM artigo gigante. Cinco artigos medianos
+# custam ~575 tokens. Baixar `k_final` teria cobrado recall nas 32 perguntas do
+# gabarito para resolver o que 4,1% dos artigos causam.
+#
+# Com teto de 2.000, 88,7% dos artigos passam inteiros. **Medido depois:**
+# `c1.orcamento_real` saiu de 14.932 tokens no pior caso (vermelho na Fase 7)
+# para 3.562, entregando 8 artigos em vez de 5 — mais contexto útil e menos
+# contexto. Quem for cortado diz que foi cortado, no próprio texto: artigo
+# truncado em silêncio faz o modelo concluir pela ausência do inciso que sumiu,
+# e é pior que artigo ausente.
+
+# `k_denso` e `k_esparso` **ficam em 30 por medição, não por inércia.** Varridos
+# em 30/60/100/150 com escopo ligado (`evals/varredura.md`):
+#
+#   k=30  recall@5 0,844  MRR 0,694   6,5 s/pergunta
+#   k=60  recall@5 0,812  MRR 0,647  12,1 s/pergunta
+#   k=100 recall@5 0,844  MRR 0,689  19,8 s/pergunta
+#   k=150 recall@5 0,875  MRR 0,696  30,6 s/pergunta
+#
+# k=150 ganha uma pergunta das 32 a 4,7x da latência, e a curva não é monotônica
+# — 60 é pior que 30 e que 100. Curva que sobe e desce assim não é propriedade da
+# largura, é variância de quem ordena: pagar 5x de latência para cavalgar
+# variância é troca ruim. Se o orçamento de latência mudar, 150 é o valor a
+# reconsiderar, e a varredura é o comando que refaz a conta.
+
+# `score_minimo` mantido no 0.5 do §13. Varrido em 0,0/0,1/0,3/0,5 nas quatro
+# larguras acima: **nenhum valor muda recall@5 nem MRR em nenhuma delas.**
+#
+# Cuidado com a palavra "inerte", que a versão anterior deste comentário usava:
+# ele é inerte para o recall e não para o que chega ao modelo. Em g06 o corte
+# reduz a entrega de 19 artigos para 3. Como o que ele elimina já estava abaixo
+# do 5º lugar, a métrica não se mexe — a quantidade de contexto que sustenta a
+# resposta, sim. A função real do threshold é descartar quando nada é relevante,
+# e isso quem exercita são as perguntas de "não sei", medidas na Fase 7.
 
 # Identidade dos índices: quem indexa e quem busca precisam concordar, então o
 # nome da coleção e o modelo moram aqui, não duplicados nos dois módulos.
