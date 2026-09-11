@@ -204,9 +204,7 @@ def checkpointer_sqlite(caminho: Path) -> tuple[SqliteSaver, sqlite3.Connection]
     tocando este arquivo. Em disco local (dev) o parâmetro é inofensivo.
     """
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    conexao = sqlite3.connect(
-        f"file:{caminho}?nolock=1", uri=True, check_same_thread=False
-    )
+    conexao = sqlite3.connect(f"file:{caminho}?nolock=1", uri=True, check_same_thread=False)
     checkpointer = SqliteSaver(conexao)
     checkpointer.setup()
     return checkpointer, conexao
