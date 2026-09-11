@@ -61,6 +61,7 @@ from copiloto.api.rotas import (
     criar_router,
     registrar_tratadores,
 )
+from copiloto.governanca.rotas import criar_router_governanca
 from copiloto.grafo.grafo import Dependencias, checkpointer_sqlite, compilar
 from copiloto.grafo.nos import ParametrosDoGrafo
 from copiloto.grafo.nos import carregar_parametros as parametros_do_grafo
@@ -492,5 +493,6 @@ def criar_app(
         lifespan=ciclo_de_vida,
     )
     app.include_router(criar_router())
+    app.include_router(criar_router_governanca())
     registrar_tratadores(app)
     return app

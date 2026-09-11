@@ -1,0 +1,149 @@
+# A ficha do sistema de IA (§16.2 do briefing), organizada nas quatro funções
+# do NIST AI RMF (GOVERN, MAP, MEASURE, MANAGE). Validada por
+# `governanca/ficha.py` (Pydantic v2, extra='forbid') e conferida contra o
+# código real por `governanca/coerencia.py` — onde os dois discordam, quem
+# está errado é este arquivo, não o parâmetro.
+#
+# `identificacao.versao` também é lido por `observabilidade/tracing.py`, via
+# regex de propósito (ver o cabeçalho daquele módulo): mudar o nome do campo
+# aqui exige mudar o regex lá também.
+
+identificacao:
+  id: copiloto-normativo-bcb
+  nome: Copiloto Normativo BCB
+  versao: "0.1.0"
+  dono: Marcos J. C. Netto
+  contato: marcosjcn94@gmail.com
+  data_registro: 2026-09-11
+
+proposito:
+  descricao: >-
+    Responde perguntas sobre normas do Banco Central citando norma, artigo e
+    status de vigência, com a citação verificada por código antes de chegar
+    ao usuário.
+  dominio: normas do BCB sobre segurança cibernética, computação em nuvem,
+    continuidade de negócios e risco operacional
+  publico_alvo: atendimento e áreas de risco/compliance de uma instituição
+    regulada, consultando o texto normativo público
+  # Vêm prontos das §1 e §2 — não são intenção declarada agora, são o que o
+  # sistema já recusa a fazer desde a Fase 5.
+  casos_de_uso_vedados:
+    - interpretar a norma
+    - emitir parecer jurídico
+    - afirmar conformidade
+
+classificacao_risco:
+  nivel: risco_limitado
+  justificativa: >-
+    Sistema de recuperação de informação sobre norma pública, sem decisão
+    automatizada com efeito legal ou material sobre terceiro: ele localiza e
+    cita, nunca decide. A única ação de escrita (registrar_crm) é proposta,
+    não executada — o interrupt() do §16.3/Fase 5 exige aprovação humana
+    antes de qualquer gravação. Não há as características do Anexo III do EU
+    AI Act (biometria, infraestrutura crítica, acesso a emprego/crédito/
+    justiça); as obrigações que se aplicam são as de transparência do Art.
+    50 — dizer que é IA e permitir auditoria da fonte, o que a citação
+    verificada por código já cumpre por desenho.
+  framework_referencia: EU AI Act, Art. 50 (obrigações de transparência
+    para sistemas de risco limitado)
+
+autonomia:
+  nivel: 2
+  acoes_autonomas:
+    - buscar_normativo (busca híbrida no corpus)
+    - consultar_catalogo (consulta SQL de metadado)
+    - propor registro no CRM (registrar_crm monta a proposta; não grava)
+  acoes_que_exigem_aprovacao:
+    - gravação efetiva no CRM — interrupt() do LangGraph, resolvido só por
+      POST /aprovar com revisor identificado
+
+modelos:
+  - id_sistema: groq
+    provedor: groq
+    modelo: openai/gpt-oss-120b
+    fornecedor: Groq
+    hospedagem: cloud_terceiro
+    papel: primario
+    implementado: true
+  - id_sistema: eval-judge/camada-3
+    provedor: groq
+    modelo: openai/gpt-oss-120b
+    fornecedor: Groq
+    hospedagem: cloud_terceiro
+    papel: juiz
+    implementado: true
+  # Previstos no §5/§3.2, sem implementação neste repositório:
+  # `api/main.py::provedor_do_ambiente` falha alto se LLM_PROVIDER pedir um
+  # dos dois, em vez de cair em silêncio na Groq. `implementado: false` é o
+  # que deixa `governanca/inventario.py` declarar a lacuna em vez de
+  # escondê-la ou inventar uma implementação que não existe.
+  - id_sistema: azure_openai
+    provedor: azure_openai
+    modelo: nao_definido
+    fornecedor: Microsoft Azure OpenAI
+    hospedagem: cloud_terceiro
+    papel: fallback
+    implementado: false
+  - id_sistema: ollama
+    provedor: ollama
+    modelo: qwen2.5:3b
+    fornecedor: Ollama (open-source, hospedagem local)
+    hospedagem: local
+    papel: fallback
+    implementado: false
+
+dados:
+  corpus: 22 normativos públicos do BCB (api.bcb.gov.br) sobre segurança
+    cibernética, computação em nuvem, continuidade e risco operacional — 344
+    artigos, incluindo 6 normas revogadas de propósito
+  pii: nenhum dado pessoal é indexado — o corpus é normativo público. PII
+    eventual na pergunta do usuário é mascarada por regex antes de entrar no
+    estado ou no trace (grafo/guardrails.py::sanear_pergunta), nunca
+    processada ou armazenada em claro
+  base_legal: LGPD art. 7º, IX (legítimo interesse) para o corpus público
+    sem dado pessoal; a PII de entrada é mascarada, não é dado tratado
+  retencao: checkpoint de conversa em SQLite, sem expurgo automático nesta
+    fase — cada thread_id persiste até limpeza manual do arquivo de
+    checkpoint
+
+limites_operacionais:
+  max_passos: 8
+  max_autocorrecao: 2
+  max_tentativas_resposta: 2
+  temperatura: 0.0
+  max_tokens_ctx: 8000
+
+controles:
+  - id: entrada.pii_e_injecao
+    tipo: entrada
+    deterministico: true
+    teste: tests/test_guardrails.py::test_tentativa_de_sobrescrever_instrucao_bloqueia_a_entrada
+  - id: saida.validacao_de_citacao
+    tipo: saida
+    deterministico: true
+    teste: tests/test_guardrails.py::test_citacao_orfa_reprova_mesmo_com_artigo_plausivel
+
+metricas:
+  faithfulness_min: 0.95
+  relevancia_min: 0.85
+  erro_tool_max: 0.02
+  recall_5_min: 0.80
+  onde_medido:
+    faithfulness_min: "evals/rodar.py camada 3 — c3.agente.faithfulness_citacao
+      (determinístico) e faithfulness_juiz (LLM-as-judge)"
+    relevancia_min: evals/rodar.py camada 3 — c3.agente.relevancia_juiz
+    erro_tool_max: evals/rodar.py camada 3 — c3.agente.taxa_erro_tool
+    recall_5_min: evals/rodar.py camada 2 — c2.recuperacao.recall
+
+incidentes:
+  fallback: Não encontrei base normativa para isso.
+
+ciclo_de_vida:
+  status: ativo
+  data_ultima_avaliacao: 2026-09-11
+  gatilhos_reavaliacao:
+    - troca do provedor de LLM primário
+    - mudança no corpus além dos normativos já cobertos
+    - novo tipo de tool com efeito de escrita
+    - revisão do material público da SPREAD (NEXT.AI/GABBI) antes de
+      qualquer fase que dependa dele — ver docs/GABBI_READY.md

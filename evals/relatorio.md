@@ -3,11 +3,11 @@
 Gerado por `evals/rodar.py`. **Não editar à mão** — o próximo `rodar.py` sobrescreve,
 e um número editado aqui deixa de ter execução por trás.
 
-- Medido em: 2026-09-11T10:10:35+00:00
-- Commit: `5ac54ab`
+- Medido em: 2026-09-11T12:08:26+00:00
+- Commit: `8dcbdc4`
 - Camadas pedidas: 1
 - Corpus disponível: sim
-- `versao_ficha`: `nao-declarada`
+- `versao_ficha`: `0.1.0`
 
 ## Verificações
 

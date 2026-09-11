@@ -109,6 +109,7 @@ Cada exclusão é uma decisão, e a lista importa tanto quanto o que foi constru
 | **RBAC na governança** | Papéis são responsabilidade de quem consome o inventário, não de quem o publica |
 | **Model registry / detecção de drift** | Corpus normativo e estático, modelo não treinado aqui. Drift sem retreino é métrica sem sujeito |
 | **Quarta tool de governança** | O agente não se audita. A ficha é endpoint e artefato de CI, nunca algo que o LLM consulta |
+| **Custo real/latência/citação órfã/HITL a partir do Langfuse** | Exigiria consultar de volta a API de leitura do Langfuse — superfície que mudou entre as versões do SDK e não foi testada contra conta real nesta fase. Aparece no painel como "não implementado", com o motivo, nunca como número inventado — ver `docs/GOVERNANCA_IA.md` |
 
 ## Três decisões que contrariaram o plano original
 
@@ -186,20 +187,26 @@ chamadas iguais não podem virar dois registros.
 | OpenAI / Azure OpenAI | `llm/groq.py` — API no estilo OpenAI, atrás do `Protocol` de `llm/provedor.py` |
 | Open-source via Ollama (`qwen2.5:3b`) | previsto; hoje o `Protocol` tem uma implementação só |
 | Arquitetura de software end-to-end | adapters, camada de provedor, resiliência, evals, CI/CD |
-| Governança de IA: ficha e classificação de risco | `config/governanca.yaml`, `docs/GOVERNANCA_IA.md` |
-| Governança de IA: inventário de frota | `governanca/inventario.py` |
-| Governança de IA: controles verificados por código | `governanca/coerencia.py` + CI vermelho na divergência |
-| Observabilidade e monitoramento de IA | Langfuse + `/governanca/metricas` |
-| Mensuração de valor / ROI por consulta | `governanca/metricas.py` |
+| Governança de IA: ficha e classificação de risco | `config/governanca.yaml` (Pydantic v2 em `governanca/ficha.py`), `docs/GOVERNANCA_IA.md` |
+| Governança de IA: inventário de frota | `governanca/inventario.py` — varre o código, **4 sistemas de IA**: `groq`, `eval-judge/camada-3`, e `azure_openai`/`ollama` previstos e não implementados |
+| Governança de IA: controles verificados por código | `governanca/coerencia.py` + CI vermelho na divergência — ver a prova viva abaixo |
+| Observabilidade e monitoramento de IA | Langfuse (Fase 7) + `GET /governanca/metricas` |
+| Mensuração de valor / ROI por consulta | `governanca/metricas.py` — premissa e medição rotuladas separadamente, ver a tabela de escopo |
 | NIST AI RMF, ISO/IEC 42001, EU AI Act, LGPD | `docs/GOVERNANCA_IA.md` |
+| Ponte para plataforma de governança de terceiro | `docs/GABBI_READY.md`, com aviso explícito de contrato inferido |
 | **CrewAI, LlamaIndex, Pinecone, Weaviate** | **deliberadamente fora — ver a tabela de escopo** |
 
-As linhas de governança apontam para a camada seguinte, ainda em construção; a de
-observabilidade já existe pela metade — o Langfuse está de pé desde a fase de evals, o
-`/governanca/metricas` não. Fora isso, o Ollama é a única linha do plano original que
-continua sem implementação, e o ponto que ela ilustraria — o `Protocol` de provedor — já foi
-provado de outro jeito, quando a Groq substituiu o GitHub Models sem que nada fora de `llm/`
-mudasse.
+O Ollama é a única linha do plano original de RAG que continua sem implementação (junto do
+Azure OpenAI, que nunca teve linha própria); o ponto que ela ilustraria — o `Protocol` de
+provedor — já foi provado de outro jeito, quando a Groq substituiu o GitHub Models sem que
+nada fora de `llm/` mudasse. A Fase 9 declara essa ausência como dado no inventário
+(`implementado: false`) em vez de escondê-la.
+
+**A prova viva da governança** — mude `max_passos` em `config/parametros.toml` para qualquer
+valor diferente de 8 e rode `pytest tests/test_coerencia.py::test_ficha_atual_e_coerente_com_o_codigo`:
+fica vermelho. Reverta o valor: fica verde de novo. `GET /governanca/coerencia` responde 409
+com a divergência exata enquanto o desvio existir. É o mesmo princípio do validador de
+citação do §8 — controle que ninguém verifica não é controle.
 
 ## Custo
 
@@ -246,7 +253,11 @@ falso, para a demonstração do webhook.
 
 Python 3.11–3.13 · LangGraph · Groq · Ollama (`qwen2.5:3b`) · `fastembed` (ONNX/CPU) ·
 `rank_bm25` · FlashRank · Chroma (+ adapter Azure AI Search) · SQLite · FastAPI · Pydantic v2
-· n8n · Langfuse · pytest · ruff · Azure Container Apps · GitHub Actions.
+· PyYAML · n8n · Langfuse · pytest · ruff · Azure Container Apps · GitHub Actions.
+
+`PyYAML` é a única exceção à lista fechada do §3 do briefing, aberta na Fase 9: a ficha de
+governança (`config/governanca.yaml`) tem listas e objetos aninhados que um leitor por regex
+— o truque que `observabilidade/tracing.py` usa para 1 campo — não sustenta com segurança.
 
 Restrição inegociável do projeto: **tudo gratuito, CPU, 8 GB de RAM.** Quase toda decisão
 acima é consequência dela.

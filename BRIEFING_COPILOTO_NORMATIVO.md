@@ -510,12 +510,25 @@ Quatro, e nenhuma pode ser resolvida de memória:
    **O §10.2 perdeu também o ACR**, por motivo independente: ele não tem free tier de espécie
    alguma e o Basic é cobrado por dia, o que contradiz o critério de pronto da própria fase.
    A imagem vai para o GitHub Container Registry, gratuito para pacote público.
-4. **Material público da SPREAD sobre NEXT.AI e GABBI** — reler `spread.com.br/next-ai/` na
-   data de execução da Fase 9 e conferir se os cinco pilares e as capacidades citadas no §16
-   continuam descritos assim. Se o vocabulário mudou, atualizar o `docs/GABBI_READY.md`; o
-   `docs/GOVERNANCA_IA.md` não muda, porque é ancorado em normas públicas.
+4. ~~**Material público da SPREAD sobre NEXT.AI e GABBI.**~~ **Reverificada na Fase 9, em
+   11/09/2026.** `spread.com.br/next-ai/` respondeu com um desafio anti-bot (`sgcaptcha`) na
+   releitura — não contornado. A confirmação veio de buscas que indexaram o conteúdo público
+   da página: os cinco pilares (Strategy & Alignment, Governance & Compliance, Operations,
+   Observability & Monitoring, Value Generation) e as capacidades da GABBI (visibilidade,
+   políticas e papéis, monitoramento, conformidade, ROI) continuam descritos como o §16.7 já
+   previa. `docs/GABBI_READY.md` abre com o aviso de contrato inferido e registra como a
+   verificação foi feita — não é leitura direta da página, e o documento diz isso.
 
 Resolver cada uma **antes** da fase que depende dela, e reportar antes de prosseguir.
+
+**Achado da Fase 9 que revisou o §16.1.** O desenho original previa 4 sistemas na frota —
+`groq`, `azure_openai`, `ollama`, `eval-judge/camada-3`. `azure_openai.py` e `ollama.py`
+nunca chegaram a existir no repositório (`api/main.py::provedor_do_ambiente` falha alto de
+propósito se alguém os pedir). Decisão tomada com o operador antes de escrever
+`governanca/inventario.py`: a varredura inventaria só o que o código implementa de fato —
+`groq` e `eval-judge/camada-3` — e os outros dois entram na ficha como
+`implementado: false`, nunca como entrada fictícia. É a mesma regra do §1.4 contra dado
+sintético, aplicada à própria camada que existe para cobrar isso dos outros.
 
 ---
 

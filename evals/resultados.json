@@ -1,11 +1,11 @@
 {
-  "medido_em": "2026-09-11T10:10:35+00:00",
-  "commit": "5ac54ab",
+  "medido_em": "2026-09-11T12:08:26+00:00",
+  "commit": "8dcbdc4",
   "camadas": [
     1
   ],
   "corpus": true,
-  "versao_ficha": "nao-declarada",
+  "versao_ficha": "0.1.0",
   "thresholds": {
     "faithfulness_min": 0.95,
     "relevancia_min": 0.85,

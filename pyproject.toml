@@ -18,6 +18,11 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "httpx>=0.27",
     "pydantic>=2.9",
+    # Única dependência nova da Fase 9. `tracing.py` lê um campo de
+    # `governanca.yaml` por regex para evitar isto; `ficha.py` carrega o
+    # documento inteiro (modelos[], controles[]) num modelo Pydantic, e um
+    # parser de linha não sustenta lista/objeto aninhado com segurança.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

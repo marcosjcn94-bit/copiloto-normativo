@@ -95,6 +95,21 @@ Executar em ordem, sem avançar sem o critério de pronto verde (`fases_de_execu
    Acionado o fallback do §10.2: SQLite em Azure Files, `maxReplicas: 1` por causa do
    lock sobre SMB. Junto caiu o ACR, que não tem free tier — a imagem vai para o GHCR.
    As duas trocas estão no README e em `infra/main.bicep`.
-4. Material público da SPREAD sobre NEXT.AI e GABBI. (antes da Fase 9)
+4. ~~Material público da SPREAD sobre NEXT.AI e GABBI.~~ **Reverificada na Fase 9, em
+   11/09/2026.** `spread.com.br/next-ai/` ficou atrás de um desafio anti-bot (não
+   contornado); a confirmação veio de buscas que indexaram o conteúdo público da página, que
+   ainda descrevem os cinco pilares e as capacidades da GABBI como o §16.7 já previa. O
+   aviso de contrato inferido está em `docs/GABBI_READY.md`, junto do detalhe de como a
+   verificação foi feita.
 
 Nenhuma pode ser resolvida de memória. Verificar e reportar antes de prosseguir.
+
+## Achado da Fase 9 que muda o desenho original
+
+O §16.1 do briefing previa 4 sistemas na frota (`groq`, `azure_openai`, `ollama`,
+`eval-judge/camada-3`). `azure_openai.py` e `ollama.py` nunca existiram no repositório —
+`api/main.py::provedor_do_ambiente` falha alto de propósito se alguém os pedir. Decisão
+tomada com o operador: `governanca/inventario.py` varre e inventaria só o real (`groq` +
+`eval-judge/camada-3`); os outros dois entram na ficha como `implementado: false`, nunca
+como entrada fictícia. `pyyaml` foi aprovado como única exceção à lista fechada do §3, para
+`governanca/ficha.py` carregar `config/governanca.yaml` inteiro num modelo Pydantic.
