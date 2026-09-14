@@ -17,6 +17,10 @@ tem como cobrir.
 continuidade e risco operacional — 344 artigos, incluindo **6 normas revogadas de
 propósito**, porque saber que a norma caiu é metade da resposta.
 
+## Arquitetura
+
+<img width="1200" height="630" alt="arquitetura" src="https://github.com/user-attachments/assets/41fe8c04-6b01-48a8-9fa8-ee6803711396" />
+
 ## FinOps: Custo R$ 0
 
 * Azure Container Apps com minReplicas: 0 (scale-to-zero) / GitHub Container Registry (GHCR) / SQLite em Azure Files / Groq (free tier) como LLM primário / qwen2.5:3b via Ollama / fastembed e FlashRank (ONNX local) / Busca esparsa rank_bm25 (puro Python) / Chroma local / n8n self-hosted (Docker) / Langfuse Cloud (free tier) / Swagger UI
